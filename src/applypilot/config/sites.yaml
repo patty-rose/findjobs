@@ -36,8 +36,6 @@ blocked_sso:
 # Used by detail enrichment to resolve relative URLs scraped from sites.
 # Sites not listed here (or with null) cannot have relative URLs resolved.
 base_urls:
-  "Job Bank Canada": "https://www.jobbank.gc.ca"
-  "CareerJet Canada": "https://www.careerjet.ca"
   "BuiltIn Remote": "https://builtin.com"
   "Hacker News Jobs": "https://news.ycombinator.com/"
   "RemoteOK": null
@@ -51,31 +49,9 @@ base_urls:
   "Arc.dev": "https://arc.dev"
   "Himalayas": "https://himalayas.app"
   "Techstars Jobs": "https://www.techstars.com"
-  "Randstad Canada": "https://www.randstad.ca/jobs/search/"
 
 sites:
   # ── Searchable sites (URL includes query + location params) ──────────
-  # Canada-specific
-  - name: "Eluta"
-    url: "https://www.eluta.ca/search?q={query_encoded}&l={location_encoded}"
-    type: search
-
-  - name: "Talent.com"
-    url: "https://www.talent.com/jobs?k={query_encoded}&l={location_encoded}"
-    type: search
-
-  - name: "Randstad Canada"
-    url: "https://www.randstad.ca/jobs/?keywords={query_encoded}&location={location_encoded}"
-    type: search
-
-  - name: "CareerJet Canada"
-    url: "https://www.careerjet.ca/search/jobs?s={query_encoded}&l={location_encoded}"
-    type: search
-
-  - name: "Job Bank Canada"
-    url: "https://www.jobbank.gc.ca/jobsearch/jobsearch?searchstring={query_encoded}&locationstring={location_encoded}&fage=2&sort=D"
-    type: search
-
   # General tech (with search)
   - name: "Dice"
     url: "https://www.dice.com/jobs?q={query_encoded}&location=Remote&pageSize=100"
@@ -153,7 +129,7 @@ sites:
     type: static
 
   - name: "Wellfound"
-    url: "https://wellfound.com/role/l/software-engineer/canada"
+    url: "https://wellfound.com/role/l/software-engineer/united-states"
     type: static
 
   - name: "Arc.dev"
