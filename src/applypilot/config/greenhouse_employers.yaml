@@ -1,0 +1,158 @@
+# Greenhouse employer registry for ApplyPilot
+# Find a company's slug from their job board URL:
+#   https://boards.greenhouse.io/{slug}
+# API: https://boards-api.greenhouse.io/v1/boards/{slug}/jobs?content=true
+
+employers:
+
+  # ── Fintech / Payments ───────────────────────────────────────────────────
+
+  stripe:
+    name: "Stripe"
+    slug: "stripe"
+
+  brex:
+    name: "Brex"
+    slug: "brex"
+
+  plaid:
+    name: "Plaid"
+    slug: "plaid"
+
+  gusto:
+    name: "Gusto"
+    slug: "gusto"
+
+  rippling:
+    name: "Rippling"
+    slug: "rippling"
+
+  chime:
+    name: "Chime"
+    slug: "chime"
+
+  # ── Productivity / Collaboration ─────────────────────────────────────────
+
+  notion:
+    name: "Notion"
+    slug: "notion"
+
+  airtable:
+    name: "Airtable"
+    slug: "airtable"
+
+  asana:
+    name: "Asana"
+    slug: "asana"
+
+  lattice:
+    name: "Lattice"
+    slug: "lattice"
+
+  loom:
+    name: "Loom"
+    slug: "loom"
+
+  calendly:
+    name: "Calendly"
+    slug: "calendly"
+
+  linear:
+    name: "Linear"
+    slug: "linear"
+
+  # ── Social / Consumer ────────────────────────────────────────────────────
+
+  reddit:
+    name: "Reddit"
+    slug: "reddit"
+
+  discord:
+    name: "Discord"
+    slug: "discord"
+
+  duolingo:
+    name: "Duolingo"
+    slug: "duolingo"
+
+  # ── Dev Tools / Infrastructure ───────────────────────────────────────────
+
+  vercel:
+    name: "Vercel"
+    slug: "vercel"
+
+  netlify:
+    name: "Netlify"
+    slug: "netlify"
+
+  cloudflare:
+    name: "Cloudflare"
+    slug: "cloudflare"
+
+  fastly:
+    name: "Fastly"
+    slug: "fastly"
+
+  pagerduty:
+    name: "PagerDuty"
+    slug: "pagerduty"
+
+  zapier:
+    name: "Zapier"
+    slug: "zapier"
+
+  twilio:
+    name: "Twilio"
+    slug: "twilio"
+
+  # ── Data / Analytics ─────────────────────────────────────────────────────
+
+  amplitude:
+    name: "Amplitude"
+    slug: "amplitude"
+
+  segment:
+    name: "Segment"
+    slug: "segment"
+
+  dbtlabs:
+    name: "dbt Labs"
+    slug: "dbtlabs"
+
+  confluent:
+    name: "Confluent"
+    slug: "confluent"
+
+  # ── Design / Web ─────────────────────────────────────────────────────────
+
+  figma:
+    name: "Figma"
+    slug: "figma"
+
+  squarespace:
+    name: "Squarespace"
+    slug: "squarespace"
+
+  canva:
+    name: "Canva"
+    slug: "canva"
+
+  # ── Customer Success / CRM ───────────────────────────────────────────────
+
+  intercom:
+    name: "Intercom"
+    slug: "intercom"
+
+  hubspot:
+    name: "HubSpot"
+    slug: "hubspot"
+
+  zendesk:
+    name: "Zendesk"
+    slug: "zendesk"
+
+  # ── Identity / Security ──────────────────────────────────────────────────
+
+  okta:
+    name: "Okta"
+    slug: "okta"
