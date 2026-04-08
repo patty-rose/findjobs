@@ -86,6 +86,22 @@ def _load_location_config(search_cfg: dict) -> tuple[list[str], list[str]]:
     return accept, reject
 
 
+def _title_ok(title: str | None, accept: list[str], reject: list[str]) -> bool:
+    """Check if a job title passes the title filter.
+
+    If accept list is provided, title must contain at least one accept term.
+    If reject list is provided, title must not contain any reject term.
+    """
+    if not title:
+        return True
+    t = title.lower()
+    if accept and not any(a.lower() in t for a in accept):
+        return False
+    if reject and any(r.lower() in t for r in reject):
+        return False
+    return True
+
+
 def _location_ok(location: str | None, accept: list[str], reject: list[str]) -> bool:
     """Check if a job location passes the user's location filter.
 
@@ -195,6 +211,8 @@ def _run_one_search(
     accept_locs: list[str],
     reject_locs: list[str],
     glassdoor_map: dict,
+    accept_titles: list[str] | None = None,
+    reject_titles: list[str] | None = None,
 ) -> dict:
     """Run a single search query and store results in DB."""
     s = search
@@ -274,14 +292,26 @@ def _run_one_search(
         str(row.get("location", "")) if str(row.get("location", "")) != "nan" else None,
         accept_locs, reject_locs,
     ), axis=1)]
-    filtered = before - len(df)
+    loc_filtered = before - len(df)
+
+    # Filter by title
+    before_title = len(df)
+    if accept_titles or reject_titles:
+        df = df[df.apply(lambda row: _title_ok(
+            str(row.get("title", "")) if str(row.get("title", "")) != "nan" else None,
+            accept_titles or [],
+            reject_titles or [],
+        ), axis=1)]
+    title_filtered = before_title - len(df)
 
     conn = get_connection()
     new, existing = store_jobspy_results(conn, df, s["query"])
 
     msg = f"[{label}] {before} results -> {new} new, {existing} dupes"
-    if filtered:
-        msg += f", {filtered} filtered (location)"
+    if loc_filtered:
+        msg += f", {loc_filtered} filtered (location)"
+    if title_filtered:
+        msg += f", {title_filtered} filtered (title)"
     log.info(msg)
 
     return {"new": new, "existing": existing, "errors": 0, "filtered": filtered, "total": before, "label": label}
@@ -377,6 +407,8 @@ def _full_crawl(
     defaults = search_cfg.get("defaults", {})
     glassdoor_map = search_cfg.get("glassdoor_location_map", {})
     accept_locs, reject_locs = _load_location_config(search_cfg)
+    accept_titles = search_cfg.get("title_accept", [])
+    reject_titles = search_cfg.get("title_reject", [])
 
     if tiers:
         queries = [q for q in queries if q.get("tier") in tiers]
@@ -412,6 +444,8 @@ def _full_crawl(
             s, sites, results_per_site, hours_old,
             proxy_config, defaults, max_retries,
             accept_locs, reject_locs, glassdoor_map,
+            accept_titles=accept_titles,
+            reject_titles=reject_titles,
         )
         completed += 1
         total_new += result["new"]

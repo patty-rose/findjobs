@@ -71,6 +71,18 @@ def _location_ok(location: str | None, accept: list[str], reject: list[str]) -> 
     return False
 
 
+def _title_ok(title: str | None, accept: list[str], reject: list[str]) -> bool:
+    """Check if a job title passes the title filter."""
+    if not title:
+        return True
+    t = title.lower()
+    if accept and not any(a.lower() in t for a in accept):
+        return False
+    if reject and any(r.lower() in t for r in reject):
+        return False
+    return True
+
+
 # -- HTML stripper -----------------------------------------------------------
 
 class _HTMLStripper(HTMLParser):
@@ -194,6 +206,8 @@ def search_employer(
     max_results: int = 0,
     accept_locs: list[str] | None = None,
     reject_locs: list[str] | None = None,
+    accept_titles: list[str] | None = None,
+    reject_titles: list[str] | None = None,
 ) -> list[dict]:
     """Search an employer, paginate through all results, optionally filter by location."""
     log.info("%s: searching \"%s\"...", employer["name"], search_text)
@@ -221,9 +235,12 @@ def search_employer(
 
         for j in postings:
             loc = j.get("locationsText", "")
+            title = j.get("title", "")
             if location_filter and accept_locs is not None and reject_locs is not None:
                 if not _location_ok(loc, accept_locs, reject_locs):
                     continue
+            if not _title_ok(title, accept_titles or [], reject_titles or []):
+                continue
 
             all_jobs.append({
                 "title": j.get("title", ""),
@@ -347,6 +364,8 @@ def _process_one(
     location_filter: bool,
     accept_locs: list[str],
     reject_locs: list[str],
+    reject_titles: list[str] | None = None,
+    accept_titles: list[str] | None = None,
 ) -> dict:
     """Search one employer, fetch details, store results."""
     emp = employers[employer_key]
@@ -357,6 +376,8 @@ def _process_one(
             location_filter=location_filter,
             accept_locs=accept_locs,
             reject_locs=reject_locs,
+            accept_titles=accept_titles,
+            reject_titles=reject_titles,
         )
     except Exception as e:
         log.error("%s: ERROR searching '%s': %s", emp["name"], search_text, e)
@@ -390,6 +411,8 @@ def scrape_employers(
     max_results: int = 0,
     accept_locs: list[str] | None = None,
     reject_locs: list[str] | None = None,
+    accept_titles: list[str] | None = None,
+    reject_titles: list[str] | None = None,
     workers: int = 1,
 ) -> dict:
     """Run full scrape: search -> filter -> detail -> store.
@@ -423,7 +446,7 @@ def scrape_employers(
             futures = {
                 pool.submit(
                     _process_one, key, employers, search_text,
-                    location_filter, accept_locs, reject_locs,
+                    location_filter, accept_locs, reject_locs, reject_titles, accept_titles,
                 ): key
                 for key in valid_keys
             }
@@ -446,7 +469,7 @@ def scrape_employers(
         for key in valid_keys:
             result = _process_one(
                 key, employers, search_text,
-                location_filter, accept_locs, reject_locs,
+                location_filter, accept_locs, reject_locs, reject_titles, accept_titles,
             )
             completed += 1
             total_new += result["new"]
@@ -493,6 +516,8 @@ def run_workday_discovery(employers: dict | None = None, workers: int = 1) -> di
     search_cfg = config.load_search_config()
     queries_cfg = search_cfg.get("queries", [])
     accept_locs, reject_locs = _load_location_filter(search_cfg)
+    accept_titles = search_cfg.get("title_accept", [])
+    reject_titles = search_cfg.get("title_reject", [])
 
     # Default to tier 1-2 queries for workday scraping
     max_tier = search_cfg.get("workday_max_tier", 2)
@@ -526,6 +551,8 @@ def run_workday_discovery(employers: dict | None = None, workers: int = 1) -> di
             location_filter=location_filter,
             accept_locs=accept_locs,
             reject_locs=reject_locs,
+            accept_titles=accept_titles,
+            reject_titles=reject_titles,
             workers=workers,
         )
         grand_new += result["new"]
