@@ -76,14 +76,12 @@ def _scrape_with_retry(kwargs: dict, max_retries: int = 2, backoff: float = 5.0)
 
 # -- Location filtering ------------------------------------------------------
 
-def _load_location_config(search_cfg: dict) -> tuple[list[str], list[str]]:
-    """Extract accept/reject location lists from search config.
-
-    Falls back to sensible defaults if not defined in the YAML.
-    """
+def _load_location_config(search_cfg: dict) -> tuple[list[str], list[str], list[str]]:
+    """Extract accept/reject location lists from search config."""
     accept = search_cfg.get("location_accept", [])
     reject = search_cfg.get("location_reject_non_remote", [])
-    return accept, reject
+    reject_always = search_cfg.get("location_reject_always", [])
+    return accept, reject, reject_always
 
 
 def _title_ok(title: str | None, accept: list[str], reject: list[str]) -> bool:
@@ -102,18 +100,24 @@ def _title_ok(title: str | None, accept: list[str], reject: list[str]) -> bool:
     return True
 
 
-def _location_ok(location: str | None, accept: list[str], reject: list[str]) -> bool:
+def _location_ok(location: str | None, accept: list[str], reject: list[str],
+                 reject_always: list[str] | None = None) -> bool:
     """Check if a job location passes the user's location filter.
 
-    Remote jobs are always accepted. Non-remote jobs must match an accept
-    pattern and not match a reject pattern.
+    reject_always terms (e.g. country names) are checked first — even remote
+    jobs in those locations are rejected. Then remote jobs are accepted.
+    Non-remote jobs must match an accept term and not match a reject term.
     """
     if not location:
         return True  # unknown location -- keep it, let scorer decide
 
     loc = location.lower()
 
-    # Remote jobs always OK
+    # Hard reject: check before the remote shortcut
+    if reject_always and any(r.lower() in loc for r in reject_always):
+        return False
+
+    # Remote jobs always OK (if not hard-rejected above)
     if any(r in loc for r in ("remote", "anywhere", "work from home", "wfh", "distributed")):
         return True
 
@@ -213,6 +217,7 @@ def _run_one_search(
     glassdoor_map: dict,
     accept_titles: list[str] | None = None,
     reject_titles: list[str] | None = None,
+    reject_always: list[str] | None = None,
 ) -> dict:
     """Run a single search query and store results in DB."""
     s = search
@@ -290,7 +295,7 @@ def _run_one_search(
     before = len(df)
     df = df[df.apply(lambda row: _location_ok(
         str(row.get("location", "")) if str(row.get("location", "")) != "nan" else None,
-        accept_locs, reject_locs,
+        accept_locs, reject_locs, reject_always,
     ), axis=1)]
     loc_filtered = before - len(df)
 
@@ -406,7 +411,7 @@ def _full_crawl(
     locs = search_cfg.get("locations", [])
     defaults = search_cfg.get("defaults", {})
     glassdoor_map = search_cfg.get("glassdoor_location_map", {})
-    accept_locs, reject_locs = _load_location_config(search_cfg)
+    accept_locs, reject_locs, reject_always = _load_location_config(search_cfg)
     accept_titles = search_cfg.get("title_accept", [])
     reject_titles = search_cfg.get("title_reject", [])
 
@@ -446,6 +451,7 @@ def _full_crawl(
             accept_locs, reject_locs, glassdoor_map,
             accept_titles=accept_titles,
             reject_titles=reject_titles,
+            reject_always=reject_always,
         )
         completed += 1
         total_new += result["new"]

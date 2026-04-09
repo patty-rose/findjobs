@@ -54,14 +54,18 @@ def _load_location_filter(search_cfg: dict | None = None):
         search_cfg = config.load_search_config()
     accept = search_cfg.get("location_accept", [])
     reject = search_cfg.get("location_reject_non_remote", [])
-    return accept, reject
+    reject_always = search_cfg.get("location_reject_always", [])
+    return accept, reject, reject_always
 
 
-def _location_ok(location: str | None, accept: list[str], reject: list[str]) -> bool:
+def _location_ok(location: str | None, accept: list[str], reject: list[str],
+                 reject_always: list[str] | None = None) -> bool:
     """Check if a job location passes the user's location filter."""
     if not location:
         return True
     loc = location.lower()
+    if reject_always and any(r.lower() in loc for r in reject_always):
+        return False
     if any(r in loc for r in ("remote", "anywhere", "work from home", "wfh", "distributed")):
         return True
     for r in reject:
@@ -92,6 +96,7 @@ def _store_jobs_filtered(
     strategy: str,
     accept_locs: list[str],
     reject_locs: list[str],
+    reject_always: list[str] | None = None,
 ) -> tuple[int, int]:
     """Store jobs with location filtering. Returns (new, existing)."""
     now = datetime.now(timezone.utc).isoformat()
@@ -103,7 +108,7 @@ def _store_jobs_filtered(
         url = job.get("url")
         if not url:
             continue
-        if not _location_ok(job.get("location"), accept_locs, reject_locs):
+        if not _location_ok(job.get("location"), accept_locs, reject_locs, reject_always):
             filtered += 1
             continue
         try:
@@ -1016,6 +1021,7 @@ def _run_all(
     targets: list[dict],
     accept_locs: list[str],
     reject_locs: list[str],
+    reject_always: list[str] | None = None,
     workers: int = 1,
 ) -> dict:
     """Run smart extract on all targets.
@@ -1038,7 +1044,7 @@ def _run_all(
         if jobs:
             new, existing = _store_jobs_filtered(conn, jobs, target["name"],
                                                   r.get("strategy", "?"),
-                                                  accept_locs, reject_locs)
+                                                  accept_locs, reject_locs, reject_always)
             total_new += new
             total_existing += existing
             log.info("DB: +%d new, %d already existed", new, existing)
@@ -1102,7 +1108,7 @@ def run_smart_extract(
         Dict with stats: total_new, total_existing, passed, total.
     """
     search_cfg = config.load_search_config()
-    accept_locs, reject_locs = _load_location_filter(search_cfg)
+    accept_locs, reject_locs, reject_always = _load_location_filter(search_cfg)
 
     targets = build_scrape_targets(sites=sites, search_cfg=search_cfg)
 
@@ -1115,4 +1121,4 @@ def run_smart_extract(
     log.info("Sites: %d searchable, %d static | Total targets: %d (workers=%d)",
              search_sites, static_sites, len(targets), workers)
 
-    return _run_all(targets, accept_locs, reject_locs, workers=workers)
+    return _run_all(targets, accept_locs, reject_locs, reject_always=reject_always, workers=workers)

@@ -1,130 +1,292 @@
 """Fast keyword-based job scoring — no LLM required.
 
-Scores jobs 1-10 based on:
-- Primary skill matches in the job description (worth more)
-- Secondary skill matches in the job description (worth less)
-- Location bonus for Portland/Oregon roles
+Scores jobs 1-10 based on tiered skill keyword matches, location, and
+years-of-experience signals found in the job description.
 
-Skills are loaded from the user's profile.json. Score breakdown:
-  Primary skills:   up to 6 points (1.5 pts each, capped)
-  Secondary skills: up to 2 points (0.5 pts each, capped)
-  Location bonus:   +2 for Portland/Oregon, +1 for Remote
-  Floor:            1, ceiling: 10
+Skill tiers and location config are loaded from searches.yaml so all
+personal preferences stay in local config, never in the codebase.
+
+Score breakdown:
+  Tier 1 skills:  2.0 pts each, capped at 6  (core stack)
+  Tier 2 skills:  0.75 pts each, capped at 2  (secondary stack)
+  Tier 3 skills:  0.25 pts each, capped at 1  (tools / weak skills)
+  Location bonus: +2 local, +1 US remote
+  Experience:     +1 if ≤3 yrs required, 0 if 4-5, -1 if 6+
+  Floor: 1, ceiling: 10
 """
 
 import logging
+import re
 import time
 from datetime import datetime, timezone
 
-from applypilot.config import load_profile
+from applypilot.config import load_profile, load_search_config
 from applypilot.database import get_connection, get_jobs_by_stage
 
 log = logging.getLogger(__name__)
 
 
-def _load_skill_lists(profile: dict) -> tuple[list[str], list[str]]:
-    """Split profile skills into primary and secondary keyword lists."""
-    skills = profile.get("skills_boundary", {})
-    langs = skills.get("programming_languages", [])
-    frameworks = skills.get("frameworks", [])
-    tools = skills.get("tools", [])
+# ── Skill loading ────────────────────────────────────────────────────────────
 
-    # Primary: languages + core frameworks most likely to appear in job postings
-    primary = langs + frameworks
+def _load_tiers(profile: dict, search_cfg: dict) -> tuple[list[str], list[str], list[str]]:
+    """Load skill tiers from searches.yaml, falling back to profile categories.
 
-    # Secondary: tools and platforms
-    secondary = tools
-
-    # Normalize to lowercase for matching
-    primary = [s.lower() for s in primary if s]
-    secondary = [s.lower() for s in secondary if s]
-
-    return primary, secondary
-
-
-def _location_bonus(location: str | None, boost_terms: list[str]) -> int:
-    """Return location bonus points.
-
-    Remote jobs get +1. Jobs matching user-configured boost locations get +2.
-    Boost terms are loaded from searches.yaml (location_boost or location_accept
-    non-remote entries) so no personal info is hardcoded here.
+    searches.yaml can define:
+      skill_tiers:
+        tier1: [python, django, ...]
+        tier2: [javascript, node.js, ...]
+        tier3: [docker, aws, ...]
     """
+    tiers_cfg = search_cfg.get("skill_tiers", {})
+
+    if tiers_cfg:
+        tier1 = [s.lower() for s in tiers_cfg.get("tier1", [])]
+        tier2 = [s.lower() for s in tiers_cfg.get("tier2", [])]
+        tier3 = [s.lower() for s in tiers_cfg.get("tier3", [])]
+    else:
+        # Fallback: use profile categories as tiers
+        skills = profile.get("skills_boundary", {})
+        tier1 = [s.lower() for s in skills.get("programming_languages", [])]
+        tier2 = [s.lower() for s in skills.get("frameworks", [])]
+        tier3 = [s.lower() for s in skills.get("tools", [])]
+
+    return tier1, tier2, tier3
+
+
+# ── Location scoring ─────────────────────────────────────────────────────────
+
+def _location_score(location: str | None, boost_terms: list[str],
+                    reject_always: list[str]) -> int:
+    """Return location bonus. Returns -99 to signal the job should be skipped."""
     if not location:
-        return 0
+        return 1  # unknown — treat as remote-ish
+
     loc = location.lower()
-    if any(t in loc for t in ("remote", "anywhere", "distributed", "work from home")):
-        return 1
+
+    # Hard reject: international locations even if "remote" appears
+    if reject_always and any(t.lower() in loc for t in reject_always):
+        return -99  # signal to skip
+
+    is_remote = any(t in loc for t in ("remote", "anywhere", "distributed", "work from home"))
+
+    if is_remote:
+        # Boost if it's a local remote (e.g. "Portland, OR (Remote)")
+        if boost_terms and any(t.lower() in loc for t in boost_terms):
+            return 2
+        return 1  # generic US remote
+
+    # In-person: boost if it's a preferred location
     if boost_terms and any(t.lower() in loc for t in boost_terms):
         return 2
+
     return 0
 
 
-def _score_job(desc: str, location: str | None,
-               primary: list[str], secondary: list[str],
-               boost_terms: list[str] | None = None) -> tuple[int, str]:
-    """Score a single job. Returns (score, reasoning)."""
+# ── Seniority scoring ────────────────────────────────────────────────────────
+
+_JUNIOR_TERMS = ("junior", "entry level", "entry-level", "associate", "jr.", " i ", "level 1",
+                 "l1", "swe 1", "swe i", "engineer i ", "engineer 1", " ii ", "level 2",
+                 "l2", "swe 2", "swe ii", "mid level", "mid-level", "engineer ii")
+_SENIOR_TERMS = ("senior", "sr.", "lead ", "staff", "principal")
+
+def _seniority_bonus(title: str, desc: str) -> float:
+    """Bonus for junior/mid roles, slight penalty for senior."""
+    text = (title + " " + desc).lower()
+    if any(t in text for t in _JUNIOR_TERMS):
+        return 1.0
+    if any(t in text for t in _SENIOR_TERMS):
+        return -0.5
+    return 0.0
+
+
+# ── Remote-first bonus ───────────────────────────────────────────────────────
+
+_REMOTE_FIRST_TERMS = ("remote-first", "remote first", "fully remote", "fully distributed",
+                       "async-first", "async first", "distributed team", "remote only")
+
+def _remote_first_bonus(desc: str) -> float:
+    text = desc.lower()
+    return 0.5 if any(t in text for t in _REMOTE_FIRST_TERMS) else 0.0
+
+
+# ── Full stack bonus ─────────────────────────────────────────────────────────
+
+def _fullstack_bonus(desc: str, tier1: list[str]) -> float:
+    """Bonus if job mentions both backend and frontend tier1 skills."""
+    text = desc.lower()
+    backend = {"python", "django", "postgresql", "node.js", "express", "fast api", "fastapi"}
+    frontend = {"react", "typescript", "javascript", "next.js"}
+    has_backend = any(s in text for s in backend if s in tier1)
+    has_frontend = any(s in text for s in frontend if s in tier1)
+    return 1.0 if (has_backend and has_frontend) else 0.0
+
+
+# ── Culture scoring ──────────────────────────────────────────────────────────
+
+_DEFAULT_CULTURE_TERMS = (
+    "collaborative", "collaboration", "mentorship", "mentoring", "mentor",
+    "growth", "learning", "development opportunities", "career growth",
+    "fun", "kind", "kindness", "empathy", "empathetic", "inclusive",
+    "supportive", "psychological safety", "work-life balance", "work life balance",
+    "team player", "people first", "human", "humble", "curiosity", "curious",
+    "trust", "transparent", "transparency", "belonging",
+)
+
+def _culture_bonus(desc: str, culture_terms: list[str]) -> float:
+    """Bonus for positive culture signals in the job description.
+
+    Culture terms are loaded from searches.yaml (culture_keywords).
+    Falls back to built-in defaults if not configured.
+    0.25 pts per match, uncapped.
+    """
+    text = desc.lower()
+    hits = [t for t in culture_terms if t in text]
+    return round(len(hits) * 0.25, 2)
+
+
+# ── Penalty signals ──────────────────────────────────────────────────────────
+
+_CONTRACT_TERMS = ("contract role", "contract position", "1099", "freelance", "contract-to-hire",
+                   "contract to hire", "independent contractor")
+_CLEARANCE_TERMS = ("security clearance", "clearance required", "secret clearance",
+                    "top secret", "ts/sci", "dod clearance", "active clearance")
+
+def _penalty_bonus(title: str, desc: str) -> float:
+    text = (title + " " + desc).lower()
+    penalty = 0.0
+    if any(t in text for t in _CLEARANCE_TERMS):
+        penalty -= 2.0
+    if any(t in text for t in _CONTRACT_TERMS):
+        penalty -= 1.0
+    return penalty
+
+
+# ── Experience scoring ───────────────────────────────────────────────────────
+
+_EXP_PATTERNS = [
+    re.compile(r'(\d+)\+?\s*(?:to\s*\d+)?\s*years?\s+(?:of\s+)?(?:professional\s+)?experience', re.I),
+    re.compile(r'minimum\s+(?:of\s+)?(\d+)\s+years?', re.I),
+    re.compile(r'at\s+least\s+(\d+)\s+years?', re.I),
+    re.compile(r'(\d+)-\d+\s+years?\s+(?:of\s+)?experience', re.I),
+]
+
+def _experience_bonus(desc: str) -> int:
+    """Scan description for years-of-experience requirements."""
+    years_found = []
+    for pattern in _EXP_PATTERNS:
+        for match in pattern.finditer(desc):
+            try:
+                years_found.append(int(match.group(1)))
+            except (ValueError, IndexError):
+                pass
+
+    if not years_found:
+        return 0
+
+    min_years = min(years_found)
+    if min_years <= 3:
+        return 1
+    elif min_years <= 5:
+        return 0
+    else:
+        return -1
+
+
+# ── Main scorer ──────────────────────────────────────────────────────────────
+
+def _score_job(desc: str, location: str | None, title: str,
+               tier1: list[str], tier2: list[str], tier3: list[str],
+               boost_terms: list[str], reject_always: list[str],
+               culture_terms: list[str] | None = None) -> tuple[int, str] | None:
+    """Score a single job. Returns None if job should be skipped (e.g. international)."""
+    loc_pts = _location_score(location, boost_terms, reject_always)
+    if loc_pts == -99:
+        return None  # skip this job
+
     if not desc:
-        return 1, "No description available"
+        score = max(1, loc_pts)
+        return score, "no description"
 
     text = desc.lower()
 
-    primary_hits = [kw for kw in primary if kw in text]
-    secondary_hits = [kw for kw in secondary if kw in text]
+    t1_hits = [kw for kw in tier1 if kw in text]
+    t2_hits = [kw for kw in tier2 if kw in text]
+    t3_hits = [kw for kw in tier3 if kw in text]
 
-    primary_pts = min(6.0, len(primary_hits) * 1.5)
-    secondary_pts = min(2.0, len(secondary_hits) * 0.5)
-    loc_bonus = _location_bonus(location, boost_terms or [])
+    t1_pts = len(t1_hits) * 2.0
+    t2_pts = len(t2_hits) * 0.75
+    t3_pts = len(t3_hits) * 0.25
+    skill_pts = t1_pts + t2_pts + t3_pts
 
-    raw = primary_pts + secondary_pts + loc_bonus
-    score = max(1, min(10, round(raw)))
+    exp_pts = _experience_bonus(text)
+    seniority_pts = _seniority_bonus(title, text)
+    remote_pts = _remote_first_bonus(text)
+    fullstack_pts = _fullstack_bonus(text, tier1)
+    penalty_pts = _penalty_bonus(title, text)
+    culture_pts = _culture_bonus(text, culture_terms or list(_DEFAULT_CULTURE_TERMS))
+
+    raw = skill_pts + loc_pts + exp_pts + seniority_pts + remote_pts + fullstack_pts + penalty_pts + culture_pts
+    score = max(1, round(raw))
 
     parts = []
-    if primary_hits:
-        parts.append(f"primary: {', '.join(primary_hits)}")
-    if secondary_hits:
-        parts.append(f"secondary: {', '.join(secondary_hits)}")
-    if loc_bonus:
-        parts.append(f"location +{loc_bonus}")
-    reasoning = "; ".join(parts) if parts else "no skill matches"
+    if t1_hits:
+        parts.append(f"tier1: {', '.join(t1_hits)}")
+    if t2_hits:
+        parts.append(f"tier2: {', '.join(t2_hits)}")
+    if t3_hits:
+        parts.append(f"tier3: {', '.join(t3_hits)}")
+    if loc_pts:
+        parts.append(f"loc +{loc_pts}")
+    if exp_pts:
+        parts.append(f"exp {exp_pts:+.1f}")
+    if seniority_pts:
+        parts.append(f"seniority {seniority_pts:+.1f}")
+    if remote_pts:
+        parts.append(f"remote-first +{remote_pts}")
+    if fullstack_pts:
+        parts.append(f"fullstack +{fullstack_pts}")
+    if penalty_pts:
+        parts.append(f"penalty {penalty_pts:+.1f}")
+    if culture_pts:
+        parts.append(f"culture +{culture_pts}")
+    reasoning = "; ".join(parts) if parts else "no matches"
 
     return score, reasoning
 
 
+# ── Entry point ──────────────────────────────────────────────────────────────
+
 def run_keyword_scoring(rescore: bool = False) -> dict:
-    """Score jobs using keyword matching against profile skills.
-
-    Fast alternative to LLM scoring — runs in seconds, no API calls.
-
-    Args:
-        rescore: If True, re-score all jobs. Otherwise only unscored ones.
-    """
+    """Score jobs using tiered keyword matching. Fast, no API calls."""
     profile = load_profile()
     if not profile:
         log.error("No profile found. Run 'applypilot init' first.")
-        return {"scored": 0, "errors": 0, "elapsed": 0.0}
+        return {"scored": 0, "skipped": 0, "errors": 0, "elapsed": 0.0}
 
-    primary, secondary = _load_skill_lists(profile)
-    log.info("Primary skills (%d): %s", len(primary), ", ".join(primary))
-    log.info("Secondary skills (%d): %s", len(secondary), ", ".join(secondary))
-
-    from applypilot.config import load_search_config
     search_cfg = load_search_config() or {}
-    # Boost terms: explicit location_boost list, or fall back to non-remote location_accept entries
+    tier1, tier2, tier3 = _load_tiers(profile, search_cfg)
+
     boost_terms = search_cfg.get("location_boost") or [
         t for t in search_cfg.get("location_accept", [])
         if t not in ("remote", "anywhere", "distributed")
     ]
+    reject_always = search_cfg.get("location_reject_always", [])
+    culture_terms = search_cfg.get("culture_keywords") or list(_DEFAULT_CULTURE_TERMS)
+
+    log.info("Tier 1 (%d): %s", len(tier1), ", ".join(tier1))
+    log.info("Tier 2 (%d): %s", len(tier2), ", ".join(tier2))
+    log.info("Tier 3 (%d): %s", len(tier3), ", ".join(tier3))
 
     conn = get_connection()
 
     if rescore:
         rows = conn.execute("SELECT * FROM jobs").fetchall()
     else:
-        rows = get_jobs_by_stage(conn=conn, stage="pending_score")
+        rows = get_jobs_by_stage(conn=conn, stage="pending_score", limit=0)
 
     if not rows:
         log.info("No unscored jobs found.")
-        return {"scored": 0, "errors": 0, "elapsed": 0.0}
+        return {"scored": 0, "skipped": 0, "errors": 0, "elapsed": 0.0}
 
     if rows and not isinstance(rows[0], dict):
         columns = rows[0].keys()
@@ -134,12 +296,22 @@ def run_keyword_scoring(rescore: bool = False) -> dict:
     t0 = time.time()
     now = datetime.now(timezone.utc).isoformat()
 
-    dist = {}
+    dist: dict[int, int] = {}
+    skipped = 0
+
     for job in rows:
         desc = job.get("full_description") or ""
         location = job.get("location") or ""
-        score, reasoning = _score_job(desc, location, primary, secondary, boost_terms)
 
+        title = job.get("title") or ""
+        result = _score_job(desc, location, title, tier1, tier2, tier3, boost_terms, reject_always, culture_terms)
+
+        if result is None:
+            # International remote — score 1, don't delete
+            result = (1, "international location")
+            skipped += 1
+
+        score, reasoning = result
         conn.execute(
             "UPDATE jobs SET fit_score = ?, score_reasoning = ?, scored_at = ? WHERE url = ?",
             (score, reasoning, now, job["url"]),
@@ -149,12 +321,13 @@ def run_keyword_scoring(rescore: bool = False) -> dict:
     conn.commit()
     elapsed = time.time() - t0
 
-    log.info("Done: %d jobs scored in %.1fs", len(rows), elapsed)
+    log.info("Done: %d scored, %d removed (international) in %.1fs", len(rows) - skipped, skipped, elapsed)
     for score in sorted(dist.keys(), reverse=True):
         log.info("  score %d: %d jobs", score, dist[score])
 
     return {
-        "scored": len(rows),
+        "scored": len(rows) - skipped,
+        "skipped": skipped,
         "errors": 0,
         "elapsed": elapsed,
         "distribution": sorted(dist.items(), reverse=True),

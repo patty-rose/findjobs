@@ -47,15 +47,21 @@ def _load_location_filter(search_cfg: dict | None = None):
 
     accept = search_cfg.get("location_accept", [])
     reject = search_cfg.get("location_reject_non_remote", [])
-    return accept, reject
+    reject_always = search_cfg.get("location_reject_always", [])
+    return accept, reject, reject_always
 
 
-def _location_ok(location: str | None, accept: list[str], reject: list[str]) -> bool:
+def _location_ok(location: str | None, accept: list[str], reject: list[str],
+                 reject_always: list[str] | None = None) -> bool:
     """Check if a job location passes the user's location filter."""
     if not location:
         return True
 
     loc = location.lower()
+
+    # Hard reject: check before the remote shortcut
+    if reject_always and any(r.lower() in loc for r in reject_always):
+        return False
 
     if any(r in loc for r in ("remote", "anywhere", "work from home", "wfh", "distributed")):
         return True
@@ -206,6 +212,7 @@ def search_employer(
     max_results: int = 0,
     accept_locs: list[str] | None = None,
     reject_locs: list[str] | None = None,
+    reject_always: list[str] | None = None,
     accept_titles: list[str] | None = None,
     reject_titles: list[str] | None = None,
 ) -> list[dict]:
@@ -237,7 +244,7 @@ def search_employer(
             loc = j.get("locationsText", "")
             title = j.get("title", "")
             if location_filter and accept_locs is not None and reject_locs is not None:
-                if not _location_ok(loc, accept_locs, reject_locs):
+                if not _location_ok(loc, accept_locs, reject_locs, reject_always):
                     continue
             if not _title_ok(title, accept_titles or [], reject_titles or []):
                 continue
@@ -364,6 +371,7 @@ def _process_one(
     location_filter: bool,
     accept_locs: list[str],
     reject_locs: list[str],
+    reject_always: list[str] | None = None,
     reject_titles: list[str] | None = None,
     accept_titles: list[str] | None = None,
 ) -> dict:
@@ -376,6 +384,7 @@ def _process_one(
             location_filter=location_filter,
             accept_locs=accept_locs,
             reject_locs=reject_locs,
+            reject_always=reject_always,
             accept_titles=accept_titles,
             reject_titles=reject_titles,
         )
@@ -411,6 +420,7 @@ def scrape_employers(
     max_results: int = 0,
     accept_locs: list[str] | None = None,
     reject_locs: list[str] | None = None,
+    reject_always: list[str] | None = None,
     accept_titles: list[str] | None = None,
     reject_titles: list[str] | None = None,
     workers: int = 1,
@@ -427,6 +437,8 @@ def scrape_employers(
         accept_locs = []
     if reject_locs is None:
         reject_locs = []
+    if reject_always is None:
+        reject_always = []
 
     # Ensure DB schema
     init_db()
@@ -446,7 +458,7 @@ def scrape_employers(
             futures = {
                 pool.submit(
                     _process_one, key, employers, search_text,
-                    location_filter, accept_locs, reject_locs, reject_titles, accept_titles,
+                    location_filter, accept_locs, reject_locs, reject_always, reject_titles, accept_titles,
                 ): key
                 for key in valid_keys
             }
@@ -469,7 +481,7 @@ def scrape_employers(
         for key in valid_keys:
             result = _process_one(
                 key, employers, search_text,
-                location_filter, accept_locs, reject_locs, reject_titles, accept_titles,
+                location_filter, accept_locs, reject_locs, reject_always, reject_titles, accept_titles,
             )
             completed += 1
             total_new += result["new"]
@@ -515,7 +527,7 @@ def run_workday_discovery(employers: dict | None = None, workers: int = 1) -> di
 
     search_cfg = config.load_search_config()
     queries_cfg = search_cfg.get("queries", [])
-    accept_locs, reject_locs = _load_location_filter(search_cfg)
+    accept_locs, reject_locs, reject_always = _load_location_filter(search_cfg)
     accept_titles = search_cfg.get("title_accept", [])
     reject_titles = search_cfg.get("title_reject", [])
 
@@ -551,6 +563,7 @@ def run_workday_discovery(employers: dict | None = None, workers: int = 1) -> di
             location_filter=location_filter,
             accept_locs=accept_locs,
             reject_locs=reject_locs,
+            reject_always=reject_always,
             accept_titles=accept_titles,
             reject_titles=reject_titles,
             workers=workers,

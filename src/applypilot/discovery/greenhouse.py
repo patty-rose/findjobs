@@ -99,6 +99,7 @@ def run_greenhouse_discovery() -> dict:
     search_cfg = config.load_search_config()
     accept_locs = search_cfg.get("location_accept", [])
     reject_locs = search_cfg.get("location_reject_non_remote", [])
+    reject_always = search_cfg.get("location_reject_always", [])
     accept_titles = search_cfg.get("title_accept", [])
     reject_titles = search_cfg.get("title_reject", [])
 
@@ -127,7 +128,7 @@ def run_greenhouse_discovery() -> dict:
 
             if not _title_ok(title, accept_titles, reject_titles):
                 continue
-            if not _location_ok(location, accept_locs, reject_locs):
+            if not _location_ok(location, accept_locs, reject_locs, reject_always):
                 continue
             filtered.append(job)
 
