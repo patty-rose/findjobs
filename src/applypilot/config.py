@@ -13,6 +13,7 @@ DB_PATH = APP_DIR / "applypilot.db"
 PROFILE_PATH = APP_DIR / "profile.json"
 RESUME_PATH = APP_DIR / "resume.txt"
 RESUME_PDF_PATH = APP_DIR / "resume.pdf"
+COVER_LETTER_PDF_PATH = APP_DIR / "cover_letter.pdf"
 SEARCH_CONFIG_PATH = APP_DIR / "searches.yaml"
 ENV_PATH = APP_DIR / ".env"
 

@@ -84,6 +84,7 @@ def run(
         ),
     ),
     min_score: int = typer.Option(7, "--min-score", help="Minimum fit score for tailor/cover stages."),
+    limit: Optional[int] = typer.Option(None, "--limit", "-l", help="Max jobs to tailor/cover."),
     workers: int = typer.Option(1, "--workers", "-w", help="Parallel threads for discovery/enrichment stages."),
     stream: bool = typer.Option(False, "--stream", help="Run stages concurrently (streaming mode)."),
     dry_run: bool = typer.Option(False, "--dry-run", help="Preview stages without executing."),
@@ -132,6 +133,7 @@ def run(
     result = run_pipeline(
         stages=stage_list,
         min_score=min_score,
+        limit=limit,
         dry_run=dry_run,
         stream=stream,
         workers=workers,
@@ -197,16 +199,17 @@ def apply(
         )
         raise typer.Exit(code=1)
 
-    # Check 3: Tailored resumes exist (skip for --gen with --url)
+    # Check 3: Scored jobs exist (skip for --gen with --url)
     if not (gen and url):
         conn = get_connection()
         ready = conn.execute(
-            "SELECT COUNT(*) FROM jobs WHERE tailored_resume_path IS NOT NULL AND applied_at IS NULL"
+            "SELECT COUNT(*) FROM jobs WHERE fit_score >= ? AND applied_at IS NULL",
+            (min_score,),
         ).fetchone()[0]
         if ready == 0:
             console.print(
-                "[red]No tailored resumes ready.[/red]\n"
-                "Run [bold]applypilot run score tailor[/bold] first to prepare applications."
+                "[red]No scored jobs ready to apply to.[/red]\n"
+                "Run [bold]applypilot run fastscore[/bold] first."
             )
             raise typer.Exit(code=1)
 

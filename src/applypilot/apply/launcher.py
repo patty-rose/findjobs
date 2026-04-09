@@ -110,7 +110,6 @@ def acquire_job(target_url: str | None = None, min_score: int = 7,
                        fit_score, location, full_description, cover_letter_path
                 FROM jobs
                 WHERE (url = ? OR application_url = ? OR application_url LIKE ? OR url LIKE ?)
-                  AND tailored_resume_path IS NOT NULL
                   AND apply_status != 'in_progress'
                 LIMIT 1
             """, (target_url, target_url, like, like)).fetchone()
@@ -131,8 +130,7 @@ def acquire_job(target_url: str | None = None, min_score: int = 7,
                 SELECT url, title, site, application_url, tailored_resume_path,
                        fit_score, location, full_description, cover_letter_path
                 FROM jobs
-                WHERE tailored_resume_path IS NOT NULL
-                  AND (apply_status IS NULL OR apply_status = 'failed')
+                WHERE (apply_status IS NULL OR apply_status = 'failed')
                   AND (apply_attempts IS NULL OR apply_attempts < ?)
                   AND fit_score >= ?
                   {site_clause}
@@ -221,12 +219,14 @@ def gen_prompt(target_url: str, min_score: int = 7,
     if not job:
         return None
 
-    # Read resume text
+    # Read resume text — fall back to base resume if no tailored version
     resume_path = job.get("tailored_resume_path")
     txt_path = Path(resume_path).with_suffix(".txt") if resume_path else None
     resume_text = ""
     if txt_path and txt_path.exists():
         resume_text = txt_path.read_text(encoding="utf-8")
+    elif config.RESUME_PATH.exists():
+        resume_text = config.RESUME_PATH.read_text(encoding="utf-8")
 
     prompt = prompt_mod.build_prompt(job=job, tailored_resume=resume_text)
 
@@ -303,12 +303,14 @@ def run_job(job: dict, port: int, worker_id: int = 0,
         'applied', 'expired', 'captcha', 'login_issue',
         'failed:reason', or 'skipped'.
     """
-    # Read tailored resume text
+    # Read resume text — fall back to base resume if no tailored version
     resume_path = job.get("tailored_resume_path")
     txt_path = Path(resume_path).with_suffix(".txt") if resume_path else None
     resume_text = ""
     if txt_path and txt_path.exists():
         resume_text = txt_path.read_text(encoding="utf-8")
+    elif config.RESUME_PATH.exists():
+        resume_text = config.RESUME_PATH.read_text(encoding="utf-8")
 
     # Build the prompt
     agent_prompt = prompt_mod.build_prompt(
@@ -595,6 +597,22 @@ def worker_loop(worker_id: int = 0, limit: int = 1,
             continue
 
         empty_polls = 0
+
+        # Dry-run: just show what would happen, no browser needed
+        if dry_run:
+            title = job.get("title", "?")[:40]
+            url = job.get("url", "")
+            score = job.get("fit_score", "?")
+            resume = job.get("tailored_resume_path") or str(config.RESUME_PDF_PATH)
+            add_event(f"[W{worker_id}] DRY RUN: {title} (score={score})")
+            logger.info("[dry-run] Would apply to: %s | score=%s | resume=%s", url, score, resume)
+            mark_result(job["url"], "applied", duration_ms=0)  # mark so next job is picked
+            applied += 1
+            jobs_done += 1
+            update_state(worker_id, status="idle", job_title=title,
+                         last_action=f"dry-run: {title}", jobs_applied=applied,
+                         jobs_done=jobs_done)
+            continue
 
         chrome_proc = None
         try:

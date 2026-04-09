@@ -439,12 +439,12 @@ def build_prompt(job: dict, tailored_resume: str,
     search_config = config.load_search_config()
     personal = profile["personal"]
 
-    # --- Resolve resume PDF path ---
+    # --- Resolve resume PDF path --- fall back to base resume.pdf
     resume_path = job.get("tailored_resume_path")
-    if not resume_path:
-        raise ValueError(f"No tailored resume for job: {job.get('title', 'unknown')}")
-
-    src_pdf = Path(resume_path).with_suffix(".pdf").resolve()
+    if resume_path:
+        src_pdf = Path(resume_path).with_suffix(".pdf").resolve()
+    else:
+        src_pdf = config.RESUME_PDF_PATH.resolve()
     if not src_pdf.exists():
         raise ValueError(f"Resume PDF not found: {src_pdf}")
 
@@ -461,6 +461,8 @@ def build_prompt(job: dict, tailored_resume: str,
     cover_letter_text = cover_letter or ""
     cl_upload_path = ""
     cl_path = job.get("cover_letter_path")
+    base_cl_pdf = config.COVER_LETTER_PDF_PATH
+
     if cl_path and Path(cl_path).exists():
         cl_src = Path(cl_path)
         # Read text from .txt sibling (PDF is binary)
@@ -475,6 +477,11 @@ def build_prompt(job: dict, tailored_resume: str,
             cl_upload = dest_dir / f"{name_slug}_Cover_Letter.pdf"
             shutil.copy(str(cl_pdf_src), str(cl_upload))
             cl_upload_path = str(cl_upload)
+    elif base_cl_pdf.exists():
+        # Fall back to base cover letter
+        cl_upload = dest_dir / f"{name_slug}_Cover_Letter.pdf"
+        shutil.copy(str(base_cl_pdf), str(cl_upload))
+        cl_upload_path = str(cl_upload)
 
     # --- Build all prompt sections ---
     profile_summary = _build_profile_summary(profile)
