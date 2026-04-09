@@ -26,7 +26,7 @@ console = Console()
 log = logging.getLogger(__name__)
 
 # Valid pipeline stages (in execution order)
-VALID_STAGES = ("discover", "enrich", "score", "tailor", "cover", "pdf")
+VALID_STAGES = ("discover", "enrich", "fastscore", "score", "tailor", "cover", "pdf")
 
 
 # ---------------------------------------------------------------------------

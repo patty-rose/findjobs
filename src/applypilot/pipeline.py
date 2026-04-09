@@ -32,26 +32,28 @@ console = Console()
 # Stage definitions
 # ---------------------------------------------------------------------------
 
-STAGE_ORDER = ("discover", "enrich", "score", "tailor", "cover", "pdf")
+STAGE_ORDER = ("discover", "enrich", "fastscore", "score", "tailor", "cover", "pdf")
 
 STAGE_META: dict[str, dict] = {
-    "discover": {"desc": "Job discovery (JobSpy + Workday + smart extract)"},
-    "enrich":   {"desc": "Detail enrichment (full descriptions + apply URLs)"},
-    "score":    {"desc": "LLM scoring (fit 1-10)"},
-    "tailor":   {"desc": "Resume tailoring (LLM + validation)"},
-    "cover":    {"desc": "Cover letter generation"},
-    "pdf":      {"desc": "PDF conversion (tailored resumes + cover letters)"},
+    "discover":  {"desc": "Job discovery (JobSpy + Workday + Greenhouse + smart extract)"},
+    "enrich":    {"desc": "Detail enrichment (full descriptions + apply URLs)"},
+    "fastscore": {"desc": "Keyword scoring (fast, no LLM — skill + location match)"},
+    "score":     {"desc": "LLM scoring (fit 1-10)"},
+    "tailor":    {"desc": "Resume tailoring (LLM + validation)"},
+    "cover":     {"desc": "Cover letter generation"},
+    "pdf":       {"desc": "PDF conversion (tailored resumes + cover letters)"},
 }
 
 # Upstream dependency: a stage only finishes when its upstream is done AND
 # it has no remaining pending work.
 _UPSTREAM: dict[str, str | None] = {
-    "discover": None,
-    "enrich":   "discover",
-    "score":    "enrich",
-    "tailor":   "score",
-    "cover":    "tailor",
-    "pdf":      "cover",
+    "discover":  None,
+    "enrich":    "discover",
+    "fastscore": "enrich",
+    "score":     "enrich",
+    "tailor":    "score",
+    "cover":     "tailor",
+    "pdf":       "cover",
 }
 
 
@@ -60,8 +62,8 @@ _UPSTREAM: dict[str, str | None] = {
 # ---------------------------------------------------------------------------
 
 def _run_discover(workers: int = 1) -> dict:
-    """Stage: Job discovery — JobSpy, Workday, and smart-extract scrapers."""
-    stats: dict = {"jobspy": None, "workday": None, "smartextract": None}
+    """Stage: Job discovery — JobSpy, Workday, Greenhouse, and smart-extract scrapers."""
+    stats: dict = {"jobspy": None, "workday": None, "greenhouse": None, "smartextract": None}
 
     # JobSpy
     console.print("  [cyan]JobSpy full crawl...[/cyan]")
@@ -85,6 +87,17 @@ def _run_discover(workers: int = 1) -> dict:
         console.print(f"  [red]Workday error:[/red] {e}")
         stats["workday"] = f"error: {e}"
 
+    # Greenhouse corporate scraper
+    console.print("  [cyan]Greenhouse corporate scraper...[/cyan]")
+    try:
+        from applypilot.discovery.greenhouse import run_greenhouse_discovery
+        run_greenhouse_discovery()
+        stats["greenhouse"] = "ok"
+    except Exception as e:
+        log.error("Greenhouse scraper failed: %s", e)
+        console.print(f"  [red]Greenhouse error:[/red] {e}")
+        stats["greenhouse"] = f"error: {e}"
+
     # Smart extract
     console.print("  [cyan]Smart extract (AI-powered scraping)...[/cyan]")
     try:
@@ -107,6 +120,17 @@ def _run_enrich(workers: int = 1) -> dict:
         return {"status": "ok"}
     except Exception as e:
         log.error("Enrichment failed: %s", e)
+        return {"status": f"error: {e}"}
+
+
+def _run_fastscore() -> dict:
+    """Stage: Keyword scoring — fast, no LLM, skill + location match."""
+    try:
+        from applypilot.scoring.keyword_scorer import run_keyword_scoring
+        run_keyword_scoring()
+        return {"status": "ok"}
+    except Exception as e:
+        log.error("Keyword scoring failed: %s", e)
         return {"status": f"error: {e}"}
 
 
@@ -156,12 +180,13 @@ def _run_pdf() -> dict:
 
 # Map stage names to their runner functions
 _STAGE_RUNNERS: dict[str, callable] = {
-    "discover": _run_discover,
-    "enrich":   _run_enrich,
-    "score":    _run_score,
-    "tailor":   _run_tailor,
-    "cover":    _run_cover,
-    "pdf":      _run_pdf,
+    "discover":  _run_discover,
+    "enrich":    _run_enrich,
+    "fastscore": _run_fastscore,
+    "score":     _run_score,
+    "tailor":    _run_tailor,
+    "cover":     _run_cover,
+    "pdf":       _run_pdf,
 }
 
 
