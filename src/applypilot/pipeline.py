@@ -123,11 +123,11 @@ def _run_enrich(workers: int = 1) -> dict:
         return {"status": f"error: {e}"}
 
 
-def _run_fastscore() -> dict:
+def _run_fastscore(rescore: bool = False) -> dict:
     """Stage: Keyword scoring — fast, no LLM, skill + location match."""
     try:
         from applypilot.scoring.keyword_scorer import run_keyword_scoring
-        run_keyword_scoring()
+        run_keyword_scoring(rescore=rescore)
         return {"status": "ok"}
     except Exception as e:
         log.error("Keyword scoring failed: %s", e)
@@ -351,8 +351,8 @@ def _run_stage_streaming(
 # Pipeline orchestrators
 # ---------------------------------------------------------------------------
 
-def _run_sequential(ordered: list[str], min_score: int, limit: int = 0, workers: int = 1,
-                    validation_mode: str = "normal") -> dict:
+def _run_sequential(ordered: list[str], min_score: int, limit: int = 0, rescore: bool = False,
+                    workers: int = 1, validation_mode: str = "normal") -> dict:
     """Execute stages one at a time (original behavior)."""
     results: list[dict] = []
     errors: dict[str, str] = {}
@@ -377,6 +377,8 @@ def _run_sequential(ordered: list[str], min_score: int, limit: int = 0, workers:
                     kwargs["limit"] = limit
             if name in ("discover", "enrich"):
                 kwargs["workers"] = workers
+            if name == "fastscore":
+                kwargs["rescore"] = rescore
             result = runner(**kwargs)
             elapsed = time.time() - t0
 
@@ -407,8 +409,8 @@ def _run_sequential(ordered: list[str], min_score: int, limit: int = 0, workers:
     return {"stages": results, "errors": errors, "elapsed": total_elapsed}
 
 
-def _run_streaming(ordered: list[str], min_score: int, limit: int = 0, workers: int = 1,
-                   validation_mode: str = "normal") -> dict:
+def _run_streaming(ordered: list[str], min_score: int, limit: int = 0, rescore: bool = False,
+                   workers: int = 1, validation_mode: str = "normal") -> dict:
     """Execute stages concurrently with DB as conveyor belt."""
     tracker = _StageTracker()
     stop_event = threading.Event()
@@ -475,6 +477,7 @@ def run_pipeline(
     stages: list[str] | None = None,
     min_score: int = 7,
     limit: int | None = None,
+    rescore: bool = False,
     dry_run: bool = False,
     stream: bool = False,
     workers: int = 1,
@@ -529,10 +532,10 @@ def run_pipeline(
     # Execute
     _limit = limit or 0
     if stream:
-        result = _run_streaming(ordered, min_score, limit=_limit, workers=workers,
+        result = _run_streaming(ordered, min_score, limit=_limit, rescore=rescore, workers=workers,
                                 validation_mode=validation_mode)
     else:
-        result = _run_sequential(ordered, min_score, limit=_limit, workers=workers,
+        result = _run_sequential(ordered, min_score, limit=_limit, rescore=rescore, workers=workers,
                                  validation_mode=validation_mode)
 
     # Summary table

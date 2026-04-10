@@ -170,8 +170,11 @@ _EXP_PATTERNS = [
     re.compile(r'(\d+)-\d+\s+years?\s+(?:of\s+)?experience', re.I),
 ]
 
-def _experience_bonus(desc: str) -> int:
-    """Scan description for years-of-experience requirements."""
+def _experience_bonus(desc: str) -> tuple[int, int | None]:
+    """Scan description for years-of-experience requirements.
+
+    Returns (bonus, min_years_required). min_years is None if not mentioned.
+    """
     years_found = []
     for pattern in _EXP_PATTERNS:
         for match in pattern.finditer(desc):
@@ -181,15 +184,15 @@ def _experience_bonus(desc: str) -> int:
                 pass
 
     if not years_found:
-        return 0
+        return 0, None
 
     min_years = min(years_found)
     if min_years <= 3:
-        return 1
+        return 1, min_years
     elif min_years <= 5:
-        return 0
+        return 0, min_years
     else:
-        return -1
+        return -1, min_years
 
 
 # ── Main scorer ──────────────────────────────────────────────────────────────
@@ -197,15 +200,15 @@ def _experience_bonus(desc: str) -> int:
 def _score_job(desc: str, location: str | None, title: str,
                tier1: list[str], tier2: list[str], tier3: list[str],
                boost_terms: list[str], reject_always: list[str],
-               culture_terms: list[str] | None = None) -> tuple[int, str] | None:
-    """Score a single job. Returns None if job should be skipped (e.g. international)."""
+               culture_terms: list[str] | None = None) -> tuple[int, str, int | None] | None:
+    """Score a single job. Returns (score, reasoning, years_required) or None to skip."""
     loc_pts = _location_score(location, boost_terms, reject_always)
     if loc_pts == -99:
         return None  # skip this job
 
     if not desc:
         score = max(1, loc_pts)
-        return score, "no description"
+        return score, "no description", None
 
     text = desc.lower()
 
@@ -218,7 +221,7 @@ def _score_job(desc: str, location: str | None, title: str,
     t3_pts = len(t3_hits) * 0.25
     skill_pts = t1_pts + t2_pts + t3_pts
 
-    exp_pts = _experience_bonus(text)
+    exp_pts, years_required = _experience_bonus(text)
     seniority_pts = _seniority_bonus(title, text)
     remote_pts = _remote_first_bonus(text)
     fullstack_pts = _fullstack_bonus(text, tier1)
@@ -251,7 +254,7 @@ def _score_job(desc: str, location: str | None, title: str,
         parts.append(f"culture +{culture_pts}")
     reasoning = "; ".join(parts) if parts else "no matches"
 
-    return score, reasoning
+    return score, reasoning, years_required
 
 
 # ── Entry point ──────────────────────────────────────────────────────────────
@@ -308,13 +311,13 @@ def run_keyword_scoring(rescore: bool = False) -> dict:
 
         if result is None:
             # International remote — score 1, don't delete
-            result = (1, "international location")
+            result = (1, "international location", None)
             skipped += 1
 
-        score, reasoning = result
+        score, reasoning, years_required = result
         conn.execute(
-            "UPDATE jobs SET fit_score = ?, score_reasoning = ?, scored_at = ? WHERE url = ?",
-            (score, reasoning, now, job["url"]),
+            "UPDATE jobs SET fit_score = ?, score_reasoning = ?, scored_at = ?, years_required = ? WHERE url = ?",
+            (score, reasoning, now, years_required, job["url"]),
         )
         dist[score] = dist.get(score, 0) + 1
 

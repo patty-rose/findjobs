@@ -133,6 +133,8 @@ def acquire_job(target_url: str | None = None, min_score: int = 7,
                 WHERE (apply_status IS NULL OR apply_status = 'failed')
                   AND (apply_attempts IS NULL OR apply_attempts < ?)
                   AND fit_score >= ?
+                  AND (years_required IS NULL OR years_required <= 3)
+                  AND url NOT LIKE '%greenhouse.io%'
                   {site_clause}
                   {url_clauses}
                 ORDER BY fit_score DESC, url
