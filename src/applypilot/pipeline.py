@@ -34,11 +34,15 @@ console = Console()
 
 STAGE_ORDER = ("discover", "enrich", "fastscore", "score", "tailor", "cover", "pdf")
 
+# Default stages when running with no args or "all" — excludes LLM scoring.
+# Use `applypilot run score` explicitly to run Gemini scoring.
+DEFAULT_STAGES = ("discover", "enrich", "fastscore", "tailor", "cover", "pdf")
+
 STAGE_META: dict[str, dict] = {
     "discover":  {"desc": "Job discovery (JobSpy + Workday + Greenhouse + smart extract)"},
     "enrich":    {"desc": "Detail enrichment (full descriptions + apply URLs)"},
     "fastscore": {"desc": "Keyword scoring (fast, no LLM — skill + location match)"},
-    "score":     {"desc": "LLM scoring (fit 1-10)"},
+    "score":     {"desc": "LLM scoring (fit 1-10) — opt-in only"},
     "tailor":    {"desc": "Resume tailoring (LLM + validation)"},
     "cover":     {"desc": "Cover letter generation"},
     "pdf":       {"desc": "PDF conversion (tailored resumes + cover letters)"},
@@ -51,7 +55,7 @@ _UPSTREAM: dict[str, str | None] = {
     "enrich":    "discover",
     "fastscore": "enrich",
     "score":     "enrich",
-    "tailor":    "score",
+    "tailor":    "fastscore",
     "cover":     "tailor",
     "pdf":       "cover",
 }
@@ -197,7 +201,7 @@ _STAGE_RUNNERS: dict[str, callable] = {
 def _resolve_stages(stage_names: list[str]) -> list[str]:
     """Resolve 'all' and validate/order stage names."""
     if "all" in stage_names:
-        return list(STAGE_ORDER)
+        return list(DEFAULT_STAGES)
 
     resolved = []
     for name in stage_names:
