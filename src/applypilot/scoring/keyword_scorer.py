@@ -224,7 +224,6 @@ def _score_job(desc: str, location: str | None, title: str,
         "qa ", " qa", "qe ", " qe", "sdet", "quality assurance", "quality engineer",
         "test engineer", "software test", "testing engineer",
         "intern", "internship",
-        "machine learning", "ml engineer", "data scientist", "data engineer",
         "android", "ios ", "mobile engineer", "mobile developer",
         "devops", "site reliability", " sre",
         # Level indicators: Roman numerals IV+, L-levels 5+, numeric levels 5+
