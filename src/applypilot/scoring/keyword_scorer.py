@@ -227,6 +227,17 @@ def _score_job(desc: str, location: str | None, title: str,
         "machine learning", "ml engineer", "data scientist", "data engineer",
         "android", "ios ", "mobile engineer", "mobile developer",
         "devops", "site reliability", " sre",
+        # Level indicators: Roman numerals IV+, L-levels 5+, numeric levels 5+
+        " iv", " v", " vi",
+        " l4", " l5", " l6", " l7",
+        "(l4", "(l5", "(l6", "(l7",
+        "level 4", "level 5", "level 6", "level 7",
+        "engineer 4", "engineer 5", "engineer 6", "engineer 7",
+        "developer 4", "developer 5", "developer 6",
+        " 4/", " 5/", " 6/",
+        " 5 ", " 5,", " 5-", " 5–", " 5—",
+        " 6 ", " 6,", " 6-", " 6–",
+        " 7 ", " 7,",
     )
     if any(t in title.lower() for t in _TITLE_REJECT):
         return 1, "filtered title", None
