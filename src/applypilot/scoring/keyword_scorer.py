@@ -217,11 +217,15 @@ def _score_job(desc: str, location: str | None, title: str,
     if loc_pts == -99:
         return None  # skip this job
 
-    # Hard filter: senior/lead titles are out of reach
-    _TITLE_REJECT = ("senior", "sr ", "sr.", "lead ", "staff ", "principal", "director", "head of",
-                     "vp ", "vice president", "manager")
+    # Hard filter: senior/lead/QA/test titles are not a fit
+    _TITLE_REJECT = (
+        "senior", "sr ", "sr.", "lead ", "staff ", "principal", "director", "head of",
+        "vp ", "vice president", "manager",
+        "qa ", " qa", "qe ", " qe", "sdet", "quality assurance", "quality engineer",
+        "test engineer", "software test", "testing engineer",
+    )
     if any(t in title.lower() for t in _TITLE_REJECT):
-        return 1, "senior/lead title", None
+        return 1, "qa/senior/lead title", None
 
     if not desc:
         score = max(1, loc_pts)
@@ -263,7 +267,7 @@ def _score_job(desc: str, location: str | None, title: str,
     culture_pts = _culture_bonus(text, culture_terms or list(_DEFAULT_CULTURE_TERMS))
 
     raw = skill_pts + loc_pts + exp_pts + seniority_pts + remote_pts + fullstack_pts + penalty_pts + culture_pts
-    score = max(1, round(raw))
+    score = max(1, min(10, round(raw)))
 
     parts = []
     if t1_hits:
