@@ -65,7 +65,7 @@ _UPSTREAM: dict[str, str | None] = {
 # Individual stage runners
 # ---------------------------------------------------------------------------
 
-def _run_discover(workers: int = 1) -> dict:
+def _run_discover(workers: int = 1, smart_extract: bool = False) -> dict:
     """Stage: Job discovery — JobSpy, Workday, Greenhouse, and smart-extract scrapers."""
     stats: dict = {"jobspy": None, "workday": None, "greenhouse": None, "smartextract": None}
 
@@ -102,16 +102,20 @@ def _run_discover(workers: int = 1) -> dict:
         console.print(f"  [red]Greenhouse error:[/red] {e}")
         stats["greenhouse"] = f"error: {e}"
 
-    # Smart extract
-    console.print("  [cyan]Smart extract (AI-powered scraping)...[/cyan]")
-    try:
-        from applypilot.discovery.smartextract import run_smart_extract
-        run_smart_extract(workers=workers)
-        stats["smartextract"] = "ok"
-    except Exception as e:
-        log.error("Smart extract failed: %s", e)
-        console.print(f"  [red]Smart extract error:[/red] {e}")
-        stats["smartextract"] = f"error: {e}"
+    # Smart extract (opt-in — requires LLM API)
+    if smart_extract:
+        console.print("  [cyan]Smart extract (AI-powered scraping)...[/cyan]")
+        try:
+            from applypilot.discovery.smartextract import run_smart_extract
+            run_smart_extract(workers=workers)
+            stats["smartextract"] = "ok"
+        except Exception as e:
+            log.error("Smart extract failed: %s", e)
+            console.print(f"  [red]Smart extract error:[/red] {e}")
+            stats["smartextract"] = f"error: {e}"
+    else:
+        console.print("  [dim]Smart extract skipped (use --smart-extract to enable)[/dim]")
+        stats["smartextract"] = "skipped"
 
     return stats
 
@@ -292,6 +296,7 @@ def _run_stage_streaming(
     limit: int = 0,
     workers: int = 1,
     validation_mode: str = "normal",
+    smart_extract: bool = False,
 ) -> None:
     """Run a single stage in streaming mode: loop until upstream done + no work.
 
@@ -308,6 +313,8 @@ def _run_stage_streaming(
             kwargs["limit"] = limit
     if stage in ("discover", "enrich"):
         kwargs["workers"] = workers
+    if stage == "discover":
+        kwargs["smart_extract"] = smart_extract
 
     upstream = _UPSTREAM[stage]
 
@@ -356,7 +363,7 @@ def _run_stage_streaming(
 # ---------------------------------------------------------------------------
 
 def _run_sequential(ordered: list[str], min_score: int, limit: int = 0, rescore: bool = False,
-                    workers: int = 1, validation_mode: str = "normal") -> dict:
+                    workers: int = 1, validation_mode: str = "normal", smart_extract: bool = False) -> dict:
     """Execute stages one at a time (original behavior)."""
     results: list[dict] = []
     errors: dict[str, str] = {}
@@ -381,6 +388,8 @@ def _run_sequential(ordered: list[str], min_score: int, limit: int = 0, rescore:
                     kwargs["limit"] = limit
             if name in ("discover", "enrich"):
                 kwargs["workers"] = workers
+            if name == "discover":
+                kwargs["smart_extract"] = smart_extract
             if name == "fastscore":
                 kwargs["rescore"] = rescore
             result = runner(**kwargs)
@@ -414,7 +423,7 @@ def _run_sequential(ordered: list[str], min_score: int, limit: int = 0, rescore:
 
 
 def _run_streaming(ordered: list[str], min_score: int, limit: int = 0, rescore: bool = False,
-                   workers: int = 1, validation_mode: str = "normal") -> dict:
+                   workers: int = 1, validation_mode: str = "normal", smart_extract: bool = False) -> dict:
     """Execute stages concurrently with DB as conveyor belt."""
     tracker = _StageTracker()
     stop_event = threading.Event()
@@ -436,7 +445,7 @@ def _run_streaming(ordered: list[str], min_score: int, limit: int = 0, rescore: 
         start_times[name] = time.time()
         t = threading.Thread(
             target=_run_stage_streaming,
-            args=(name, tracker, stop_event, min_score, limit, workers, validation_mode),
+            args=(name, tracker, stop_event, min_score, limit, workers, validation_mode, smart_extract),
             name=f"stage-{name}",
             daemon=True,
         )
@@ -486,6 +495,7 @@ def run_pipeline(
     stream: bool = False,
     workers: int = 1,
     validation_mode: str = "normal",
+    smart_extract: bool = False,
 ) -> dict:
     """Run pipeline stages.
 
@@ -537,10 +547,10 @@ def run_pipeline(
     _limit = limit or 0
     if stream:
         result = _run_streaming(ordered, min_score, limit=_limit, rescore=rescore, workers=workers,
-                                validation_mode=validation_mode)
+                                validation_mode=validation_mode, smart_extract=smart_extract)
     else:
         result = _run_sequential(ordered, min_score, limit=_limit, rescore=rescore, workers=workers,
-                                 validation_mode=validation_mode)
+                                 validation_mode=validation_mode, smart_extract=smart_extract)
 
     # Summary table
     console.print(f"\n{'=' * 70}")

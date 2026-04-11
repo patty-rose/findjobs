@@ -86,6 +86,7 @@ def run(
     min_score: int = typer.Option(7, "--min-score", help="Minimum fit score for tailor/cover stages."),
     limit: Optional[int] = typer.Option(None, "--limit", "-l", help="Max jobs to tailor/cover."),
     rescore: bool = typer.Option(False, "--rescore", help="Re-score all jobs (fastscore only)."),
+    smart_extract: bool = typer.Option(False, "--smart-extract", help="Enable AI-powered smart extract scraper (uses LLM API)."),
     workers: int = typer.Option(1, "--workers", "-w", help="Parallel threads for discovery/enrichment stages."),
     stream: bool = typer.Option(False, "--stream", help="Run stages concurrently (streaming mode)."),
     dry_run: bool = typer.Option(False, "--dry-run", help="Preview stages without executing."),
@@ -140,6 +141,7 @@ def run(
         stream=stream,
         workers=workers,
         validation_mode=validation,
+        smart_extract=smart_extract,
     )
 
     if result.get("errors"):
