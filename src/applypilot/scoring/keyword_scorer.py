@@ -7,15 +7,20 @@ Skill tiers and location config are loaded from searches.yaml so all
 personal preferences stay in local config, never in the codebase.
 
 Score breakdown:
-  Tier 1 skills:  2.0 pts each, capped at 6  (core stack)
-  Tier 2 skills:  0.75 pts each, capped at 2  (secondary stack)
-  Tier 3 skills:  0.25 pts each, capped at 1  (tools / weak skills)
+  Tier 1 skills:  2.0 pts each (core stack)
+  Tier 2 skills:  0.75 pts each (secondary stack)
+  Tier 3 skills:  0.25 pts each (tools / weak skills)
+  Frequency boost: sublinear — 1 mention=1.0x, 2=1.2x, 3+=1.35x per keyword
+  Length norm:     skill_pts divided by log2(word_count+2) so long JDs
+                   don't unfairly dominate; normalized to a 9-word baseline
   Location bonus: +2 local, +1 US remote
   Experience:     +1 if ≤3 yrs required, 0 if 4-5, -1 if 6+
+  Culture:        ratio of matched/total terms, capped at 1.0
   Floor: 1, ceiling: 10
 """
 
 import logging
+import math
 import re
 import time
 from datetime import datetime, timezone
@@ -84,17 +89,20 @@ def _location_score(location: str | None, boost_terms: list[str],
 
 # ── Seniority scoring ────────────────────────────────────────────────────────
 
-_JUNIOR_TERMS = ("junior", "entry level", "entry-level", "associate", "jr.", " i ", "level 1",
+_INTERN_TERMS = ("intern", "internship", "co-op", "coop")
+_JUNIOR_TERMS = ("junior", "entry level", "entry-level", "jr.", " i ", "level 1",
                  "l1", "swe 1", "swe i", "engineer i ", "engineer 1", " ii ", "level 2",
                  "l2", "swe 2", "swe ii", "mid level", "mid-level", "engineer ii")
-_SENIOR_TERMS = ("senior", "sr.", "lead ", "staff", "principal")
+_SENIOR_TERMS = ("senior", "sr ", "sr.", "lead ", "staff", "principal")
 
 def _seniority_bonus(title: str, desc: str) -> float:
-    """Bonus for junior/mid roles, slight penalty for senior."""
-    text = (title + " " + desc).lower()
-    if any(t in text for t in _JUNIOR_TERMS):
-        return 1.0
-    if any(t in text for t in _SENIOR_TERMS):
+    """Penalty for intern/senior, slight penalty for junior (still worth applying)."""
+    t = title.lower()
+    if any(term in t for term in _INTERN_TERMS):
+        return -1.5
+    if any(term in t for term in _JUNIOR_TERMS):
+        return -0.5
+    if any(term in t for term in _SENIOR_TERMS):
         return -0.5
     return 0.0
 
@@ -135,13 +143,16 @@ _DEFAULT_CULTURE_TERMS = (
 def _culture_bonus(desc: str, culture_terms: list[str]) -> float:
     """Bonus for positive culture signals in the job description.
 
-    Culture terms are loaded from searches.yaml (culture_keywords).
-    Falls back to built-in defaults if not configured.
-    0.25 pts per match, uncapped.
+    Uses ratio of matched/total terms so long JDs don't get an unfair
+    advantage over shorter ones. Capped at 1.0.
     """
+    if not culture_terms:
+        return 0.0
     text = desc.lower()
-    hits = [t for t in culture_terms if t in text]
-    return round(len(hits) * 0.25, 2)
+    hits = sum(1 for t in culture_terms if t in text)
+    ratio = hits / len(culture_terms)
+    # Scale: ratio=0.25 → ~1.0 pts (most jobs that mention culture hit ~25% of terms)
+    return round(min(ratio * 4.0, 1.0), 2)
 
 
 # ── Penalty signals ──────────────────────────────────────────────────────────
@@ -206,20 +217,43 @@ def _score_job(desc: str, location: str | None, title: str,
     if loc_pts == -99:
         return None  # skip this job
 
+    # Hard filter: senior/lead titles are out of reach
+    _TITLE_REJECT = ("senior", "sr ", "sr.", "lead ", "staff ", "principal", "director", "head of",
+                     "vp ", "vice president", "manager")
+    if any(t in title.lower() for t in _TITLE_REJECT):
+        return 1, "senior/lead title", None
+
     if not desc:
         score = max(1, loc_pts)
         return score, "no description", None
 
     text = desc.lower()
 
+    def _freq_weight(kw: str) -> float:
+        """Sublinear frequency boost: 1 mention=1.0x, 2=1.2x, 3+=1.35x."""
+        count = text.count(kw)
+        if count == 0:
+            return 0.0
+        if count == 1:
+            return 1.0
+        if count == 2:
+            return 1.2
+        return 1.35
+
     t1_hits = [kw for kw in tier1 if kw in text]
     t2_hits = [kw for kw in tier2 if kw in text]
     t3_hits = [kw for kw in tier3 if kw in text]
 
-    t1_pts = len(t1_hits) * 2.0
-    t2_pts = len(t2_hits) * 0.75
-    t3_pts = len(t3_hits) * 0.25
-    skill_pts = t1_pts + t2_pts + t3_pts
+    t1_pts = sum(_freq_weight(kw) * 2.0 for kw in t1_hits)
+    t2_pts = sum(_freq_weight(kw) * 0.75 for kw in t2_hits)
+    t3_pts = sum(_freq_weight(kw) * 0.25 for kw in t3_hits)
+    raw_skill_pts = t1_pts + t2_pts + t3_pts
+
+    # Length normalization: divide by log2(word_count+2), anchored to a
+    # 300-word baseline so a typical JD scores roughly the same as before.
+    word_count = len(text.split())
+    length_norm = math.log2(300 + 2) / math.log2(word_count + 2) if word_count > 0 else 1.0
+    skill_pts = raw_skill_pts * length_norm
 
     exp_pts, years_required = _experience_bonus(text)
     seniority_pts = _seniority_bonus(title, text)
