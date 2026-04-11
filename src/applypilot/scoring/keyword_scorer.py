@@ -217,15 +217,19 @@ def _score_job(desc: str, location: str | None, title: str,
     if loc_pts == -99:
         return None  # skip this job
 
-    # Hard filter: senior/lead/QA/test titles are not a fit
+    # Hard filter: senior/lead/QA/test/intern titles are not a fit
     _TITLE_REJECT = (
         "senior", "sr ", "sr.", "lead ", "staff ", "principal", "director", "head of",
         "vp ", "vice president", "manager",
         "qa ", " qa", "qe ", " qe", "sdet", "quality assurance", "quality engineer",
         "test engineer", "software test", "testing engineer",
+        "intern", "internship",
+        "machine learning", "ml engineer", "data scientist", "data engineer",
+        "android", "ios ", "mobile engineer", "mobile developer",
+        "devops", "site reliability", " sre",
     )
     if any(t in title.lower() for t in _TITLE_REJECT):
-        return 1, "qa/senior/lead title", None
+        return 1, "filtered title", None
 
     if not desc:
         score = max(1, loc_pts)
