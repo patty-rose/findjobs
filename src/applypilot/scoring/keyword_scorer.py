@@ -129,6 +129,45 @@ def _fullstack_bonus(desc: str, tier1: list[str]) -> float:
     return 1.0 if (has_backend and has_frontend) else 0.0
 
 
+# ── Clean title bonus ────────────────────────────────────────────────────────
+
+_PURE_TITLES = {
+    "software engineer", "software developer",
+    "full stack engineer", "full-stack engineer", "fullstack engineer",
+    "full stack developer", "full-stack developer", "fullstack developer",
+    "backend engineer", "backend developer",
+    "web developer", "web engineer",
+}
+
+def _clean_title_bonus(title: str) -> float:
+    """Bonus for generic titles — signals open/flexible hiring, not hyper-specific."""
+    t = title.lower().strip()
+    if t in _PURE_TITLES:
+        return 1.5  # exact match: "Software Engineer", "Full Stack Developer"
+    # Short title with no qualifiers: e.g. "Software Developer", "Backend Engineer"
+    if len(t.split()) <= 3 and not any(c in t for c in ("-", "(", ",", "/")):
+        return 0.75
+    return 0.0
+
+
+# ── Mid-level bonus ───────────────────────────────────────────────────────────
+
+_MIDLEVEL_TERMS = (
+    "mid-level", "mid level", "midlevel", "mid-engineer",
+    "intermediate", "2-4 year", "2-5 year", "3-5 year", "ii ", "level 2", "level 3",
+)
+
+def _midlevel_bonus(title: str, desc: str) -> float:
+    """Bonus if the role is explicitly mid-level — strong fit signal."""
+    t = title.lower()
+    if any(term in t for term in _MIDLEVEL_TERMS):
+        return 1.5  # in the title: very strong signal
+    text = desc.lower()
+    if any(term in text for term in _MIDLEVEL_TERMS):
+        return 0.75  # in the description only
+    return 0.0
+
+
 # ── Culture scoring ──────────────────────────────────────────────────────────
 
 _DEFAULT_CULTURE_TERMS = (
@@ -226,13 +265,19 @@ def _score_job(desc: str, location: str | None, title: str,
         "intern", "internship",
         "android", "ios ", "mobile engineer", "mobile developer",
         "devops", "site reliability", " sre",
-        "mainframe", "linux engineer", "php ",
+        "mainframe", "linux engineer", "php",
+        "java ", "java,", "golang", "scala",
+        ".net engineer", ".net developer", "c# engineer", "c# developer",
         "solutions engineer", "professional services",
         "customer success", "technical account", "architect",
         "security engineer", "salesforce", "privacy engineer",
         "machine learning", "ml engineer",
         "technical lead", " lead,", " lead.", "lead engineer",
-        "yoe)", "yoe ",  # catches "8+ YOE" in parens or standalone
+        "frontend engineer", "front-end engineer", "front end engineer",
+        "- frontend", "– frontend", "- front end", "– front end",
+        "ui engineer", "ui/ux engineer", "ui developer",
+        "c# .net", "c#/.net",
+        "yoe", "+ years",  # catches "8+ YOE", "10+ years experience" in title
         # Level indicators: Roman numerals IV+, L-levels 5+, numeric levels 5+
         " iv", " v", " vi",
         " l4", " l5", " l6", " l7",
@@ -286,8 +331,10 @@ def _score_job(desc: str, location: str | None, title: str,
     fullstack_pts = _fullstack_bonus(text, tier1)
     penalty_pts = _penalty_bonus(title, text)
     culture_pts = _culture_bonus(text, culture_terms or list(_DEFAULT_CULTURE_TERMS))
+    clean_title_pts = _clean_title_bonus(title)
+    midlevel_pts = _midlevel_bonus(title, text)
 
-    raw = skill_pts + loc_pts + exp_pts + seniority_pts + remote_pts + fullstack_pts + penalty_pts + culture_pts
+    raw = skill_pts + loc_pts + exp_pts + seniority_pts + remote_pts + fullstack_pts + penalty_pts + culture_pts + clean_title_pts + midlevel_pts
     score = max(1, min(10, round(raw)))
 
     parts = []
@@ -311,6 +358,10 @@ def _score_job(desc: str, location: str | None, title: str,
         parts.append(f"penalty {penalty_pts:+.1f}")
     if culture_pts:
         parts.append(f"culture +{culture_pts}")
+    if clean_title_pts:
+        parts.append(f"clean-title +{clean_title_pts}")
+    if midlevel_pts:
+        parts.append(f"mid-level +{midlevel_pts}")
     reasoning = "; ".join(parts) if parts else "no matches"
 
     return score, reasoning, years_required
