@@ -588,20 +588,10 @@ def scrape_detail_page(page, url: str) -> dict:
 
     tier2_apply = apply
 
-    # Tier 3: LLM
-    llm_result = extract_with_llm(page, url)
-    result["full_description"] = llm_result.get("full_description")
-    result["application_url"] = llm_result.get("application_url") or tier2_apply
-    result["tier_used"] = 3
-
-    if result.get("full_description"):
-        result["status"] = "ok" if result.get("application_url") else "partial"
-    elif result.get("application_url"):
-        result["status"] = "partial"
-    else:
-        result["status"] = "error"
-        result["error"] = "no data extracted"
-
+    # Tier 3 (LLM) disabled — skip pages we can't parse with HTML extraction
+    result["application_url"] = tier2_apply
+    result["tier_used"] = 2
+    result["status"] = "partial" if tier2_apply else "no_description"
     result["elapsed"] = time.time() - t0
     return result
 
