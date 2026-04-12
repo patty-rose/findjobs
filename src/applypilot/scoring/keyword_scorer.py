@@ -277,7 +277,10 @@ def _score_job(desc: str, location: str | None, title: str,
         "- frontend", "– frontend", "- front end", "– front end",
         "ui engineer", "ui/ux engineer", "ui developer",
         "c# .net", "c#/.net",
-        "yoe", "+ years",  # catches "8+ YOE", "10+ years experience" in title
+        # 4+ YOE and above in title
+        "4+ yoe", "5+ yoe", "6+ yoe", "7+ yoe", "8+ yoe", "9+ yoe", "10+ yoe", "12+ yoe",
+        "4+ years", "5+ years", "6+ years", "7+ years", "8+ years", "10+ years",
+        "(4+", "(5+", "(6+", "(7+", "(8+", "(9+", "(10+",
         # Level indicators: Roman numerals IV+, L-levels 5+, numeric levels 5+
         " iv", " v", " vi",
         " l4", " l5", " l6", " l7",
