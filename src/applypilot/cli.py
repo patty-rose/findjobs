@@ -461,6 +461,40 @@ def doctor() -> None:
 
 
 @app.command()
+def portland(
+    min_score: int = typer.Option(1, "--min-score", help="Minimum fit score to include."),
+) -> None:
+    """Show all jobs in Portland / Oregon area, ordered by score."""
+    from applypilot.database import get_connection, init_db
+
+    _bootstrap()
+    init_db()
+
+    conn = get_connection()
+    rows = conn.execute("""
+        SELECT title, location, fit_score, score_reasoning, url
+        FROM jobs
+        WHERE (location LIKE '%portland%' OR location LIKE '%oregon%' OR location LIKE '%hillsboro%')
+          AND (applied_at IS NULL OR apply_status = 'manual')
+          AND fit_score >= ?
+        ORDER BY fit_score DESC
+    """, (min_score,)).fetchall()
+
+    if not rows:
+        console.print("[yellow]No Portland/Oregon jobs found.[/yellow]")
+        raise typer.Exit()
+
+    console.print(f"\n[bold]Portland / Oregon jobs ({len(rows)} found):[/bold]\n")
+    for r in rows:
+        score_color = "green" if r["fit_score"] >= 7 else "yellow" if r["fit_score"] >= 4 else "dim"
+        console.print(f"  [[{score_color}]{r['fit_score']}[/{score_color}]] {r['title']}")
+        console.print(f"        [dim]{r['location']}[/dim]")
+        console.print(f"        [dim]{r['score_reasoning']}[/dim]")
+        console.print(f"        [dim]{r['url'][:80]}[/dim]")
+        console.print()
+
+
+@app.command()
 def browse(
     min_score: int = typer.Option(7, "--min-score", help="Minimum fit score to include."),
     limit: int = typer.Option(20, "--limit", "-l", help="Max jobs to open."),

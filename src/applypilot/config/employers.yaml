@@ -30,12 +30,6 @@ employers:
     site_id: "Cisco_Careers"
     base_url: "https://cisco.wd5.myworkdayjobs.com"
 
-  intel:
-    name: "Intel"
-    tenant: "intel"
-    site_id: "External"
-    base_url: "https://intel.wd1.myworkdayjobs.com"
-
   adobe:
     name: "Adobe"
     tenant: "adobe"
