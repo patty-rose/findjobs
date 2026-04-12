@@ -460,5 +460,67 @@ def doctor() -> None:
     console.print()
 
 
+@app.command()
+def browse(
+    min_score: int = typer.Option(7, "--min-score", help="Minimum fit score to include."),
+    limit: int = typer.Option(20, "--limit", "-l", help="Max jobs to open."),
+) -> None:
+    """Open manual-apply jobs (Greenhouse, Lever, etc.) in your browser, ordered by score.
+
+    Jobs are marked as 'manual' so they are never auto-applied.
+    Already-opened jobs are skipped.
+    """
+    import webbrowser
+    from datetime import datetime, timezone
+    from applypilot.config import load_search_config
+    from applypilot.database import get_connection, init_db
+
+    _bootstrap()
+    init_db()
+
+    search_cfg = load_search_config() or {}
+    manual_sites = search_cfg.get("manual_apply_sites", ["greenhouse.io", "lever.co", "ashby.io"])
+
+    if not manual_sites:
+        console.print("[yellow]No manual_apply_sites configured in searches.yaml.[/yellow]")
+        raise typer.Exit()
+
+    # Build WHERE clause matching any manual site
+    site_clauses = " OR ".join(f"url LIKE '%{site}%'" for site in manual_sites)
+
+    conn = get_connection()
+    rows = conn.execute(f"""
+        SELECT url, title, fit_score, score_reasoning
+        FROM jobs
+        WHERE fit_score >= ?
+          AND applied_at IS NULL
+          AND (apply_status IS NULL OR apply_status NOT IN ('manual', 'applied'))
+          AND ({site_clauses})
+        ORDER BY fit_score DESC
+        LIMIT ?
+    """, (min_score, limit)).fetchall()
+
+    if not rows:
+        console.print("[yellow]No manual-apply jobs found scoring >= {min_score}.[/yellow]")
+        raise typer.Exit()
+
+    console.print(f"\n[bold]Opening {len(rows)} jobs in browser (score >= {min_score}):[/bold]\n")
+
+    now = datetime.now(timezone.utc).isoformat()
+    for row in rows:
+        url, title, score, reasoning = row["url"], row["title"], row["fit_score"], row["score_reasoning"]
+        console.print(f"  [{score}] {title}")
+        console.print(f"        [dim]{url}[/dim]")
+        webbrowser.open(url)
+        conn.execute(
+            "UPDATE jobs SET apply_status = 'manual', applied_at = ?, apply_error = 'manual apply' WHERE url = ?",
+            (now, url),
+        )
+
+    conn.commit()
+    console.print(f"\n[green]Opened {len(rows)} jobs and marked as manual.[/green]")
+    console.print("[dim]These will not appear in future browse or auto-apply runs.[/dim]\n")
+
+
 if __name__ == "__main__":
     app()

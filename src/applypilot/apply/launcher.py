@@ -40,8 +40,13 @@ logger = logging.getLogger(__name__)
 
 # Blocked sites loaded from config/sites.yaml
 def _load_blocked():
-    from applypilot.config import load_blocked_sites
-    return load_blocked_sites()
+    from applypilot.config import load_blocked_sites, load_search_config
+    blocked_sites, blocked_patterns = load_blocked_sites()
+    # Also exclude manual-apply sites (greenhouse, lever, etc.)
+    search_cfg = load_search_config() or {}
+    manual_sites = search_cfg.get("manual_apply_sites", ["greenhouse.io", "lever.co", "ashby.io"])
+    manual_patterns = [f"%{site}%" for site in manual_sites]
+    return blocked_sites, blocked_patterns + manual_patterns
 
 # How often to poll the DB when the queue is empty (seconds)
 POLL_INTERVAL = config.DEFAULTS["poll_interval"]
@@ -134,7 +139,7 @@ def acquire_job(target_url: str | None = None, min_score: int = 7,
                   AND (apply_attempts IS NULL OR apply_attempts < ?)
                   AND fit_score >= ?
                   AND (years_required IS NULL OR years_required <= 3)
-                  AND url NOT LIKE '%greenhouse.io%'
+                  AND apply_status != 'manual'
                   {site_clause}
                   {url_clauses}
                 ORDER BY fit_score DESC, url
