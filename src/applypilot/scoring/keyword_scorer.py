@@ -122,7 +122,7 @@ def _remote_first_bonus(desc: str) -> float:
 def _fullstack_bonus(desc: str, tier1: list[str]) -> float:
     """Bonus if job mentions both backend and frontend tier1 skills."""
     text = desc.lower()
-    backend = {"python", "django", "postgresql", "node.js", "express", "fast api", "fastapi"}
+    backend = {"python", "django", "postgresql", "node.js", "express.js", "expressjs", "fast api", "fastapi"}
     frontend = {"react", "typescript", "javascript", "next.js"}
     has_backend = any(s in text for s in backend if s in tier1)
     has_frontend = any(s in text for s in frontend if s in tier1)
@@ -226,6 +226,13 @@ def _score_job(desc: str, location: str | None, title: str,
         "intern", "internship",
         "android", "ios ", "mobile engineer", "mobile developer",
         "devops", "site reliability", " sre",
+        "mainframe", "linux engineer", "php ",
+        "solutions engineer", "professional services",
+        "customer success", "technical account", "architect",
+        "security engineer", "salesforce", "privacy engineer",
+        "machine learning", "ml engineer",
+        "technical lead", " lead,", " lead.", "lead engineer",
+        "yoe)", "yoe ",  # catches "8+ YOE" in parens or standalone
         # Level indicators: Roman numerals IV+, L-levels 5+, numeric levels 5+
         " iv", " v", " vi",
         " l4", " l5", " l6", " l7",
@@ -327,6 +334,7 @@ def run_keyword_scoring(rescore: bool = False) -> dict:
     ]
     reject_always = search_cfg.get("location_reject_always", [])
     culture_terms = search_cfg.get("culture_keywords") or list(_DEFAULT_CULTURE_TERMS)
+    company_blocklist = [c.lower() for c in search_cfg.get("company_blocklist", [])]
 
     log.info("Tier 1 (%d): %s", len(tier1), ", ".join(tier1))
     log.info("Tier 2 (%d): %s", len(tier2), ", ".join(tier2))
@@ -357,8 +365,20 @@ def run_keyword_scoring(rescore: bool = False) -> dict:
     for job in rows:
         desc = job.get("full_description") or ""
         location = job.get("location") or ""
-
         title = job.get("title") or ""
+        url = job.get("url") or ""
+
+        # Company blocklist — score 1 without further analysis
+        if company_blocklist and any(c in url.lower() or c in title.lower() or c in desc.lower()[:200]
+                                     for c in company_blocklist):
+            result = (1, "blocked company", None)
+            conn.execute(
+                "UPDATE jobs SET fit_score = ?, score_reasoning = ?, scored_at = ?, years_required = ? WHERE url = ?",
+                (1, "blocked company", now, None, job["url"]),
+            )
+            dist[1] = dist.get(1, 0) + 1
+            continue
+
         result = _score_job(desc, location, title, tier1, tier2, tier3, boost_terms, reject_always, culture_terms)
 
         if result is None:
