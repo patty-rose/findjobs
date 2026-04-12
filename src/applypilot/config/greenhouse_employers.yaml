@@ -156,3 +156,13 @@ employers:
   okta:
     name: "Okta"
     slug: "okta"
+
+  # ── Portland / Pacific Northwest ─────────────────────────────────────────
+
+  newrelic:
+    name: "New Relic"
+    slug: "newrelic"
+
+  vacasa:
+    name: "Vacasa"
+    slug: "vacasa"
