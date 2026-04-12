@@ -32,17 +32,19 @@ console = Console()
 # Stage definitions
 # ---------------------------------------------------------------------------
 
-STAGE_ORDER = ("discover", "enrich", "fastscore", "score", "tailor", "cover", "pdf")
+STAGE_ORDER = ("discover", "enrich", "fastscore", "llmscore", "score", "tailor", "cover", "pdf")
 
-# Default stages when running with no args or "all" — excludes LLM scoring.
-# Use `applypilot run score` explicitly to run Gemini scoring.
-DEFAULT_STAGES = ("discover", "enrich", "fastscore", "tailor", "cover", "pdf")
+# Default stages when running with no args or "all".
+# llmscore = Claude batch re-scoring via `claude -p` (uses existing CLI session, no API key needed).
+# score = legacy Gemini per-job scoring, opt-in only.
+DEFAULT_STAGES = ("discover", "enrich", "fastscore", "llmscore", "tailor", "cover", "pdf")
 
 STAGE_META: dict[str, dict] = {
     "discover":  {"desc": "Job discovery (JobSpy + Workday + Greenhouse + smart extract)"},
     "enrich":    {"desc": "Detail enrichment (full descriptions + apply URLs)"},
     "fastscore": {"desc": "Keyword scoring (fast, no LLM — skill + location match)"},
-    "score":     {"desc": "LLM scoring (fit 1-10) — opt-in only"},
+    "llmscore":  {"desc": "Claude batch re-scoring (adjusts keyword scores via claude CLI)"},
+    "score":     {"desc": "Gemini per-job scoring (fit 1-10) — opt-in only"},
     "tailor":    {"desc": "Resume tailoring (LLM + validation)"},
     "cover":     {"desc": "Cover letter generation"},
     "pdf":       {"desc": "PDF conversion (tailored resumes + cover letters)"},
@@ -54,8 +56,9 @@ _UPSTREAM: dict[str, str | None] = {
     "discover":  None,
     "enrich":    "discover",
     "fastscore": "enrich",
+    "llmscore":  "fastscore",
     "score":     "enrich",
-    "tailor":    "fastscore",
+    "tailor":    "llmscore",
     "cover":     "tailor",
     "pdf":       "cover",
 }
@@ -142,8 +145,19 @@ def _run_fastscore(rescore: bool = False) -> dict:
         return {"status": f"error: {e}"}
 
 
+def _run_llmscore(rescore: bool = False) -> dict:
+    """Stage: Claude batch re-scoring — adjusts keyword scores via claude CLI."""
+    try:
+        from applypilot.scoring.llm_scorer import run_llm_scoring
+        result = run_llm_scoring(rescore=rescore)
+        return {"status": "ok", **result}
+    except Exception as e:
+        log.error("LLM scoring failed: %s", e)
+        return {"status": f"error: {e}"}
+
+
 def _run_score() -> dict:
-    """Stage: LLM scoring — assign fit scores 1-10."""
+    """Stage: Gemini per-job scoring — opt-in only."""
     try:
         from applypilot.scoring.scorer import run_scoring
         run_scoring()
@@ -191,6 +205,7 @@ _STAGE_RUNNERS: dict[str, callable] = {
     "discover":  _run_discover,
     "enrich":    _run_enrich,
     "fastscore": _run_fastscore,
+    "llmscore":  _run_llmscore,
     "score":     _run_score,
     "tailor":    _run_tailor,
     "cover":     _run_cover,
@@ -254,8 +269,9 @@ class _StageTracker:
 
 # SQL to count pending work for each stage
 _PENDING_SQL: dict[str, str] = {
-    "enrich": "SELECT COUNT(*) FROM jobs WHERE detail_scraped_at IS NULL",
-    "score":  "SELECT COUNT(*) FROM jobs WHERE full_description IS NOT NULL AND fit_score IS NULL",
+    "enrich":   "SELECT COUNT(*) FROM jobs WHERE detail_scraped_at IS NULL",
+    "llmscore": "SELECT COUNT(*) FROM jobs WHERE fit_score IS NOT NULL AND llm_scored_at IS NULL AND full_description IS NOT NULL",
+    "score":    "SELECT COUNT(*) FROM jobs WHERE full_description IS NOT NULL AND fit_score IS NULL",
     "tailor": (
         "SELECT COUNT(*) FROM jobs WHERE fit_score >= ? "
         "AND full_description IS NOT NULL "
@@ -315,6 +331,8 @@ def _run_stage_streaming(
         kwargs["workers"] = workers
     if stage == "discover":
         kwargs["smart_extract"] = smart_extract
+    if stage in ("fastscore", "llmscore"):
+        kwargs["rescore"] = False  # streaming mode never rescores
 
     upstream = _UPSTREAM[stage]
 
@@ -390,7 +408,7 @@ def _run_sequential(ordered: list[str], min_score: int, limit: int = 0, rescore:
                 kwargs["workers"] = workers
             if name == "discover":
                 kwargs["smart_extract"] = smart_extract
-            if name == "fastscore":
+            if name in ("fastscore", "llmscore"):
                 kwargs["rescore"] = rescore
             result = runner(**kwargs)
             elapsed = time.time() - t0
