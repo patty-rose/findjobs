@@ -172,6 +172,8 @@ def run_llm_scoring(rescore: bool = False) -> dict:
             "AND llm_scored_at IS NULL "
             "AND full_description IS NOT NULL ORDER BY fit_score DESC"
         )
+    # Snapshot the keyword score before we overwrite it
+    keyword_scores: dict[int, tuple[int, str]] = {}  # rowid -> (score, reasoning)
 
     rows = conn.execute(query).fetchall()
     if not rows:
@@ -180,6 +182,8 @@ def run_llm_scoring(rescore: bool = False) -> dict:
 
     cols = rows[0].keys()
     jobs = [dict(zip(cols, r)) for r in rows]
+    for j in jobs:
+        keyword_scores[j["id"]] = (j.get("fit_score"), j.get("score_reasoning", ""))
 
     console.print(f"  [cyan]Sending {len(jobs)} jobs to Claude ({_MODEL}) for batch scoring...[/cyan]")
 
@@ -208,13 +212,18 @@ def run_llm_scoring(rescore: bool = False) -> dict:
     for adj in all_adjustments:
         job_id = adj.get("id")
         new_score = adj.get("score")
-        reason = adj.get("reason", "")
+        llm_reason = adj.get("reason", "")
         if job_id is None or new_score is None:
             continue
         new_score = max(1, min(10, int(new_score)))
+        kw_score, kw_reason = keyword_scores.get(job_id, (None, ""))
+        if kw_score is not None and kw_score != new_score:
+            full_reason = f"[kw:{kw_score}→{new_score}] {llm_reason}"
+        else:
+            full_reason = llm_reason
         conn.execute(
             "UPDATE jobs SET fit_score = ?, score_reasoning = ?, llm_scored_at = ? WHERE rowid = ?",
-            (new_score, reason, now, job_id),
+            (new_score, full_reason, now, job_id),
         )
         updated += 1
 
