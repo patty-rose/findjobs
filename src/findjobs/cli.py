@@ -467,17 +467,18 @@ def local(
         console.print("[yellow]No local locations configured in searches.yaml (location_accept).[/yellow]")
         raise typer.Exit()
 
-    where_clauses = " OR ".join(f"location LIKE '%{term}%'" for term in local_terms)
+    placeholders = " OR ".join("location LIKE ?" for _ in local_terms)
+    params = [f"%{term}%" for term in local_terms] + [min_score]
 
     conn = get_connection()
     rows = conn.execute(f"""
         SELECT title, location, fit_score, score_reasoning, url
         FROM jobs
-        WHERE ({where_clauses})
+        WHERE ({placeholders})
           AND (applied_at IS NULL OR apply_status = 'manual')
           AND fit_score >= ?
         ORDER BY fit_score DESC
-    """, (min_score,)).fetchall()
+    """, params).fetchall()
 
     label = " / ".join(t.title() for t in local_terms)
     if not rows:
@@ -536,8 +537,8 @@ def browse(
         console.print("[yellow]No manual_apply_sites configured in searches.yaml.[/yellow]")
         raise typer.Exit()
 
-    # Build WHERE clause matching any manual site
-    site_clauses = " OR ".join(f"url LIKE '%{site}%'" for site in manual_sites)
+    site_placeholders = " OR ".join("url LIKE ?" for _ in manual_sites)
+    site_params = [f"%{site}%" for site in manual_sites]
 
     conn = get_connection()
     rows = conn.execute(f"""
@@ -546,10 +547,10 @@ def browse(
         WHERE fit_score >= ?
           AND applied_at IS NULL
           AND (apply_status IS NULL OR apply_status NOT IN ('manual', 'applied'))
-          AND ({site_clauses})
+          AND ({site_placeholders})
         ORDER BY fit_score DESC
         LIMIT ?
-    """, (min_score, limit)).fetchall()
+    """, [min_score] + site_params + [limit]).fetchall()
 
     if not rows:
         console.print(f"[yellow]No manual-apply jobs found scoring >= {min_score}.[/yellow]")
