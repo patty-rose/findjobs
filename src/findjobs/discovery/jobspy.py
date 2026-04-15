@@ -15,7 +15,7 @@ from datetime import datetime, timezone
 from jobspy import scrape_jobs
 
 from findjobs import config
-from findjobs.database import get_connection, init_db, store_jobs
+from findjobs.database import get_connection, init_db, store_jobs, make_canonical_id
 
 log = logging.getLogger(__name__)
 
@@ -135,6 +135,35 @@ def _location_ok(location: str | None, accept: list[str], reject: list[str],
     return False
 
 
+# -- Salary normalization ----------------------------------------------------
+
+_SALARY_MULTIPLIERS = {
+    "hourly": 2080,
+    "hour": 2080,
+    "weekly": 52,
+    "week": 52,
+    "monthly": 12,
+    "month": 12,
+    "yearly": 1,
+    "year": 1,
+    "annual": 1,
+    "annually": 1,
+}
+
+def _normalize_salary(min_amt, max_amt, interval) -> tuple[int | None, int | None]:
+    """Normalize salary amounts to annual figures. Returns (min_annual, max_annual)."""
+    interval_key = str(interval).lower().strip() if interval else ""
+    mult = _SALARY_MULTIPLIERS.get(interval_key)
+    if mult is None:
+        return None, None
+    try:
+        min_annual = int(float(min_amt) * mult) if min_amt and str(min_amt) != "nan" else None
+        max_annual = int(float(max_amt) * mult) if max_amt and str(max_amt) != "nan" else None
+        return min_annual, max_annual
+    except (ValueError, TypeError):
+        return None, None
+
+
 # -- DB storage (JobSpy DataFrame -> SQLite) ---------------------------------
 
 def store_jobspy_results(conn: sqlite3.Connection, df, source_label: str) -> tuple[int, int]:
@@ -152,8 +181,10 @@ def store_jobspy_results(conn: sqlite3.Connection, df, source_label: str) -> tup
         company = str(row.get("company", "")) if str(row.get("company", "")) != "nan" else None
         location_str = str(row.get("location", "")) if str(row.get("location", "")) != "nan" else None
 
-        # Build salary string from min/max
+        # Build salary string + normalized annual amounts
         salary = None
+        salary_min_annual = None
+        salary_max_annual = None
         min_amt = row.get("min_amount")
         max_amt = row.get("max_amount")
         interval = str(row.get("interval", "")) if str(row.get("interval", "")) != "nan" else ""
@@ -165,6 +196,7 @@ def store_jobspy_results(conn: sqlite3.Connection, df, source_label: str) -> tup
                 salary = f"{currency}{int(float(min_amt)):,}"
             if interval:
                 salary += f"/{interval}"
+            salary_min_annual, salary_max_annual = _normalize_salary(min_amt, max_amt, interval)
 
         description = str(row.get("description", "")) if str(row.get("description", "")) != "nan" else None
         site_name = str(row.get("site", source_label))
@@ -186,15 +218,33 @@ def store_jobspy_results(conn: sqlite3.Connection, df, source_label: str) -> tup
         # Extract apply URL if JobSpy provided it
         apply_url = str(row.get("job_url_direct", "")) if str(row.get("job_url_direct", "")) != "nan" else None
 
+        canonical_id = make_canonical_id(title, company)
+
+        # Check if a semantically equivalent job already exists from another source
+        existing_url = conn.execute(
+            "SELECT url, also_found_on FROM jobs WHERE canonical_id = ? AND url != ?",
+            (canonical_id, url),
+        ).fetchone()
+
         try:
             conn.execute(
-                "INSERT INTO jobs (url, title, salary, description, location, site, strategy, discovered_at, "
-                "full_description, application_url, detail_scraped_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (url, title, salary, description, location_str, site_label, strategy, now,
-                 full_description, apply_url, detail_scraped_at),
+                "INSERT INTO jobs (url, title, salary, salary_min_annual, salary_max_annual, "
+                "description, location, site, strategy, discovered_at, "
+                "full_description, application_url, detail_scraped_at, "
+                "canonical_id, discovery_query) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (url, title, salary, salary_min_annual, salary_max_annual,
+                 description, location_str, site_label, strategy, now,
+                 full_description, apply_url, detail_scraped_at,
+                 canonical_id, source_label),
             )
             new += 1
+            # If a duplicate exists on another board, cross-link both rows
+            if existing_url:
+                other_url, other_also = existing_url
+                new_also = f"{other_also},{site_label}" if other_also else site_label
+                conn.execute("UPDATE jobs SET also_found_on = ? WHERE url = ?", (new_also, other_url))
+                conn.execute("UPDATE jobs SET also_found_on = ? WHERE url = ?", (other_url.split(",")[0] if not other_also else other_also.split(",")[0], url))
         except sqlite3.IntegrityError:
             existing += 1
 

@@ -15,7 +15,7 @@ import httpx
 import yaml
 
 from findjobs import config
-from findjobs.database import get_connection, init_db
+from findjobs.database import get_connection, init_db, make_canonical_id
 from findjobs.discovery.jobspy import _title_ok, _location_ok
 
 log = logging.getLogger(__name__)
@@ -79,11 +79,24 @@ def _store_jobs(conn, jobs: list[dict], employer_name: str) -> tuple[int, int]:
             content = re.sub(r"<[^>]+>", " ", content)
             content = re.sub(r"\s+", " ", content).strip()
 
+        canonical_id = make_canonical_id(title, employer_name)
+
+        existing_url = conn.execute(
+            "SELECT url, also_found_on FROM jobs WHERE canonical_id = ? AND url != ?",
+            (canonical_id, url),
+        ).fetchone()
+
         conn.execute("""
-            INSERT INTO jobs (url, title, site, location, full_description, strategy, discovered_at)
-            VALUES (?, ?, ?, ?, ?, 'greenhouse', ?)
-        """, (url, title, employer_name, location, content or None, now))
+            INSERT INTO jobs (url, title, site, location, full_description, strategy, discovered_at,
+                             canonical_id, discovery_query)
+            VALUES (?, ?, ?, ?, ?, 'greenhouse', ?, ?, ?)
+        """, (url, title, employer_name, location, content or None, now, canonical_id, employer_name))
         new += 1
+
+        if existing_url:
+            other_url, other_also = existing_url
+            new_also = f"{other_also},{employer_name}" if other_also else employer_name
+            conn.execute("UPDATE jobs SET also_found_on = ? WHERE url = ?", (new_also, other_url))
 
     conn.commit()
     return new, existing

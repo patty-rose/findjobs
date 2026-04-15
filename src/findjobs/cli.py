@@ -628,7 +628,8 @@ def review(
         label = f"score = {top_score} (top tier)"
 
     rows = conn.execute(f"""
-        SELECT url, title, site, fit_score, score_reasoning
+        SELECT url, title, site, fit_score, score_reasoning,
+               salary_min_annual, salary_max_annual, also_found_on
         FROM jobs
         WHERE {where}
           AND url IS NOT NULL
@@ -645,13 +646,65 @@ def review(
     for row in rows:
         score_color = "green" if row["fit_score"] >= 7 else "yellow" if row["fit_score"] >= 4 else "dim"
         site = row["site"] or ""
-        console.print(f"  [[{score_color}]{row['fit_score']}[/{score_color}]] {row['title']}" + (f" @ {site}" if site else ""))
+
+        # Format salary
+        sal = ""
+        if row["salary_min_annual"] and row["salary_max_annual"]:
+            sal = f" | ${row['salary_min_annual']//1000}k–${row['salary_max_annual']//1000}k"
+        elif row["salary_min_annual"]:
+            sal = f" | ${row['salary_min_annual']//1000}k+"
+
+        # Duplicate signal
+        also = f" [dim](also: {row['also_found_on']})[/dim]" if row["also_found_on"] else ""
+
+        console.print(f"  [[{score_color}]{row['fit_score']}[/{score_color}]] {row['title']}" + (f" @ {site}" if site else "") + sal + also)
         if row["score_reasoning"]:
             console.print(f"        [dim]{row['score_reasoning']}[/dim]")
         console.print(f"        [dim]{row['url'][:80]}[/dim]")
         webbrowser.open(row["url"])
 
     console.print(f"\n[green]Opened {len(rows)} jobs.[/green] [dim](not marked — will appear in future runs)[/dim]\n")
+
+
+@app.command()
+def queries() -> None:
+    """Show discovery query yield: which search terms produce the most high-fit jobs."""
+    from findjobs.database import get_connection, init_db
+
+    _bootstrap()
+    init_db()
+
+    conn = get_connection()
+    rows = conn.execute("""
+        SELECT
+            discovery_query,
+            COUNT(*) as total,
+            SUM(CASE WHEN fit_score >= 7 THEN 1 ELSE 0 END) as high_fit,
+            SUM(CASE WHEN fit_score IS NOT NULL THEN 1 ELSE 0 END) as scored,
+            ROUND(AVG(fit_score), 1) as avg_score
+        FROM jobs
+        WHERE discovery_query IS NOT NULL
+        GROUP BY discovery_query
+        ORDER BY high_fit DESC, total DESC
+    """).fetchall()
+
+    if not rows:
+        console.print("[yellow]No query data yet — run findjobs run first.[/yellow]")
+        raise typer.Exit()
+
+    console.print("\n[bold]Query yield (high-fit = score >= 7):[/bold]\n")
+    console.print(f"  {'Query':<35} {'Total':>6} {'Scored':>7} {'7+':>5} {'Yield':>7} {'Avg':>5}")
+    console.print(f"  {'-'*35} {'-'*6} {'-'*7} {'-'*5} {'-'*7} {'-'*5}")
+    for r in rows:
+        query = (r["discovery_query"] or "unknown")[:34]
+        yield_pct = f"{r['high_fit'] / r['scored'] * 100:.0f}%" if r["scored"] else "—"
+        avg = f"{r['avg_score']:.1f}" if r["avg_score"] else "—"
+        color = "green" if r["high_fit"] >= 5 else "yellow" if r["high_fit"] >= 2 else "dim"
+        console.print(
+            f"  [{color}]{query:<35}[/{color}] {r['total']:>6} {r['scored']:>7} "
+            f"{r['high_fit']:>5} {yield_pct:>7} {avg:>5}"
+        )
+    console.print()
 
 
 if __name__ == "__main__":

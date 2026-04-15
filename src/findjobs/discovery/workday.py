@@ -21,7 +21,7 @@ import yaml
 
 from findjobs import config
 from findjobs.config import CONFIG_DIR
-from findjobs.database import get_connection, init_db
+from findjobs.database import get_connection, init_db, make_canonical_id
 
 log = logging.getLogger(__name__)
 
@@ -324,7 +324,8 @@ def fetch_details(employer: dict, jobs: list[dict]) -> list[dict]:
 
 # -- DB storage --------------------------------------------------------------
 
-def store_results(conn: sqlite3.Connection, jobs: list[dict], employers: dict) -> tuple[int, int]:
+def store_results(conn: sqlite3.Connection, jobs: list[dict], employers: dict,
+                  query: str | None = None) -> tuple[int, int]:
     """Store corporate jobs in DB. Returns (new, existing)."""
     now = datetime.now(timezone.utc).isoformat()
     new = 0
@@ -347,16 +348,30 @@ def store_results(conn: sqlite3.Connection, jobs: list[dict], employers: dict) -
 
         site = job.get("employer_name", "Corporate")
         strategy = "workday_api"
+        title = job.get("title")
+        canonical_id = make_canonical_id(title, site)
+        discovery_query = query or job.get("employer_name")
+
+        existing_url = conn.execute(
+            "SELECT url, also_found_on FROM jobs WHERE canonical_id = ? AND url != ?",
+            (canonical_id, url),
+        ).fetchone()
 
         try:
             conn.execute(
                 "INSERT INTO jobs (url, title, salary, description, location, site, strategy, "
-                "discovered_at, full_description, application_url, detail_scraped_at, detail_error) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (url, job.get("title"), None, short_desc, job.get("location"),
-                 site, strategy, now, full_description, url, detail_scraped_at, detail_error),
+                "discovered_at, full_description, application_url, detail_scraped_at, detail_error, "
+                "canonical_id, discovery_query) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (url, title, None, short_desc, job.get("location"),
+                 site, strategy, now, full_description, url, detail_scraped_at, detail_error,
+                 canonical_id, discovery_query),
             )
             new += 1
+            if existing_url:
+                other_url, other_also = existing_url
+                new_also = f"{other_also},{site}" if other_also else site
+                conn.execute("UPDATE jobs SET also_found_on = ? WHERE url = ?", (new_also, other_url))
         except sqlite3.IntegrityError:
             existing += 1
 
@@ -403,7 +418,7 @@ def _process_one(
         log.error("%s: ERROR fetching details for '%s': %s", emp["name"], search_text, e)
 
     conn = get_connection()
-    new, existing = store_results(conn, jobs, employers)
+    new, existing = store_results(conn, jobs, employers, query=search_text)
     log.info("%s: %d new, %d already in DB", emp["name"], new, existing)
 
     return {"employer": emp["name"], "query": search_text,

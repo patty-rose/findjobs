@@ -5,12 +5,22 @@ pipeline stage are created up front so any stage can run independently
 without migration ordering issues.
 """
 
+import hashlib
+import re
 import sqlite3
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
 
 from findjobs.config import DB_PATH
+
+
+def make_canonical_id(title: str | None, company: str | None) -> str:
+    """Stable hash of normalized title+company — used to detect the same job
+    appearing across multiple boards (Indeed, LinkedIn, Greenhouse, etc.)."""
+    title_n = re.sub(r'[^a-z0-9]', '', (title or '').lower())[:40]
+    company_n = re.sub(r'[^a-z0-9]', '', (company or '').lower())[:25]
+    return hashlib.md5(f"{title_n}|{company_n}".encode()).hexdigest()[:12]
 
 # Thread-local connection storage — each thread gets its own connection
 # (required for SQLite thread safety with parallel workers)
@@ -139,6 +149,12 @@ def init_db(db_path: Path | str | None = None) -> sqlite3.Connection:
     # Run migrations for any columns added after initial schema
     ensure_columns(conn)
 
+    # Index after ensure_columns so canonical_id is guaranteed to exist
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_canonical_id ON jobs (canonical_id)"
+    )
+    conn.commit()
+
     return conn
 
 
@@ -150,11 +166,16 @@ _ALL_COLUMNS: dict[str, str] = {
     "url": "TEXT PRIMARY KEY",
     "title": "TEXT",
     "salary": "TEXT",
+    "salary_min_annual": "INTEGER",
+    "salary_max_annual": "INTEGER",
     "description": "TEXT",
     "location": "TEXT",
     "site": "TEXT",
     "strategy": "TEXT",
     "discovered_at": "TEXT",
+    "canonical_id": "TEXT",
+    "also_found_on": "TEXT",
+    "discovery_query": "TEXT",
     # Enrichment
     "full_description": "TEXT",
     "application_url": "TEXT",
