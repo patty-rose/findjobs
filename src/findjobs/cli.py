@@ -19,7 +19,7 @@ logging.basicConfig(
 
 app = typer.Typer(
     name="findjobs",
-    help="AI-powered end-to-end job application pipeline.",
+    help="Find and score jobs from across the web. Discover, rank, review.",
     no_args_is_help=True,
 )
 console = Console()
@@ -77,36 +77,24 @@ def init() -> None:
 def run(
     stages: Optional[list[str]] = typer.Argument(
         None,
-        help=(
-            "Pipeline stages to run. "
-            f"Valid: {', '.join(VALID_STAGES)}, all. "
-            "Defaults to 'all' if omitted."
-        ),
+        help="Pipeline stages to run: discover, enrich, fastscore, llmscore. Defaults to all four.",
     ),
-    min_score: int = typer.Option(7, "--min-score", help="Minimum fit score for tailor/cover stages."),
-    limit: Optional[int] = typer.Option(None, "--limit", "-l", help="Max jobs to tailor/cover."),
     rescore: bool = typer.Option(False, "--rescore", help="Re-score all jobs (fastscore only)."),
-    smart_extract: bool = typer.Option(False, "--smart-extract", help="Enable AI-powered smart extract scraper (uses LLM API)."),
-    workers: int = typer.Option(1, "--workers", "-w", help="Parallel threads for discovery/enrichment stages."),
-    stream: bool = typer.Option(False, "--stream", help="Run stages concurrently (streaming mode)."),
+    smart_extract: bool = typer.Option(False, "--smart-extract", help="Enable AI-powered smart extract scraper."),
+    workers: int = typer.Option(1, "--workers", "-w", help="Parallel threads for discovery/enrichment."),
     dry_run: bool = typer.Option(False, "--dry-run", help="Preview stages without executing."),
-    validation: str = typer.Option(
-        "normal",
-        "--validation",
-        help=(
-            "Validation strictness for tailor/cover stages. "
-            "strict: banned words = errors, judge must pass. "
-            "normal: banned words = warnings only (default, recommended for Gemini free tier). "
-            "lenient: banned words ignored, LLM judge skipped (fastest, fewest API calls)."
-        ),
-    ),
+    # hidden options kept for backward compat
+    min_score: int = typer.Option(7, "--min-score", hidden=True),
+    limit: Optional[int] = typer.Option(None, "--limit", "-l", hidden=True),
+    stream: bool = typer.Option(False, "--stream", hidden=True),
+    validation: str = typer.Option("normal", "--validation", hidden=True),
 ) -> None:
-    """Run pipeline stages: discover, enrich, score, tailor, cover, pdf."""
+    """Scrape and score jobs (discover → enrich → fastscore → llmscore)."""
     _bootstrap()
 
     from findjobs.pipeline import run_pipeline
 
-    stage_list = stages if stages else ["all"]
+    stage_list = stages if stages else ["discover", "enrich", "fastscore", "llmscore"]
 
     # Validate stage names
     for s in stage_list:
@@ -148,7 +136,7 @@ def run(
         raise typer.Exit(code=1)
 
 
-@app.command()
+@app.command(hidden=True)
 def apply(
     limit: Optional[int] = typer.Option(None, "--limit", "-l", help="Max applications to submit."),
     workers: int = typer.Option(1, "--workers", "-w", help="Number of parallel browser workers."),
