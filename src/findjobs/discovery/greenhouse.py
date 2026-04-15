@@ -14,9 +14,9 @@ from pathlib import Path
 import httpx
 import yaml
 
-from applypilot import config
-from applypilot.database import get_connection, init_db
-from applypilot.discovery.jobspy import _title_ok, _location_ok
+from findjobs import config
+from findjobs.database import get_connection, init_db
+from findjobs.discovery.jobspy import _title_ok, _location_ok
 
 log = logging.getLogger(__name__)
 

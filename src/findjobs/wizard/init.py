@@ -1,6 +1,6 @@
 """ApplyPilot first-time setup wizard.
 
-Interactive flow that creates ~/.applypilot/ with:
+Interactive flow that creates ~/.findjobs/ with:
   - resume.txt (and optionally resume.pdf)
   - profile.json
   - searches.yaml
@@ -18,7 +18,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.prompt import Confirm, Prompt
 
-from applypilot.config import (
+from findjobs.config import (
     APP_DIR,
     ENV_PATH,
     PROFILE_PATH,
@@ -242,7 +242,7 @@ def _setup_ai_features() -> None:
     ))
 
     if not Confirm.ask("Enable AI scoring and resume tailoring?", default=True):
-        console.print("[dim]Discovery-only mode. You can configure AI later with [bold]applypilot init[/bold].[/dim]")
+        console.print("[dim]Discovery-only mode. You can configure AI later with [bold]findjobs init[/bold].[/dim]")
         return
 
     console.print("Supported providers: [bold]Gemini[/bold] (recommended, free tier), OpenAI, local (Ollama/llama.cpp)")
@@ -332,7 +332,7 @@ def run_wizard() -> None:
             "[bold green]ApplyPilot Setup Wizard[/bold green]\n\n"
             "This will create your configuration at:\n"
             f"  [cyan]{APP_DIR}[/cyan]\n\n"
-            "You can re-run this anytime with [bold]applypilot init[/bold].",
+            "You can re-run this anytime with [bold]findjobs init[/bold].",
             border_style="green",
         )
     )
@@ -361,7 +361,7 @@ def run_wizard() -> None:
     console.print()
 
     # Done — show tier status
-    from applypilot.config import get_tier, TIER_LABELS, TIER_COMMANDS
+    from findjobs.config import get_tier, TIER_LABELS, TIER_COMMANDS
 
     tier = get_tier()
 
@@ -378,7 +378,7 @@ def run_wizard() -> None:
 
     unlock_hint = ""
     if tier == 1:
-        unlock_hint = "\n[dim]To unlock Tier 2: configure an LLM API key (re-run [bold]applypilot init[/bold]).[/dim]"
+        unlock_hint = "\n[dim]To unlock Tier 2: configure an LLM API key (re-run [bold]findjobs init[/bold]).[/dim]"
     elif tier == 2:
         unlock_hint = "\n[dim]To unlock Tier 3: install Claude Code CLI + Chrome.[/dim]"
 

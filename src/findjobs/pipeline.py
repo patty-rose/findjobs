@@ -3,11 +3,11 @@
 Runs pipeline stages in sequence or concurrently (streaming mode).
 
 Usage (via CLI):
-    applypilot run                        # all stages, sequential
-    applypilot run --stream               # all stages, concurrent
-    applypilot run discover enrich        # specific stages
-    applypilot run score tailor cover     # LLM-only stages
-    applypilot run --dry-run              # preview without executing
+    findjobs run                        # all stages, sequential
+    findjobs run --stream               # all stages, concurrent
+    findjobs run discover enrich        # specific stages
+    findjobs run score tailor cover     # LLM-only stages
+    findjobs run --dry-run              # preview without executing
 """
 
 from __future__ import annotations
@@ -21,8 +21,8 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
-from applypilot.config import load_env, ensure_dirs
-from applypilot.database import init_db, get_connection, get_stats
+from findjobs.config import load_env, ensure_dirs
+from findjobs.database import init_db, get_connection, get_stats
 
 log = logging.getLogger(__name__)
 console = Console()
@@ -75,7 +75,7 @@ def _run_discover(workers: int = 1, smart_extract: bool = False) -> dict:
     # JobSpy
     console.print("  [cyan]JobSpy full crawl...[/cyan]")
     try:
-        from applypilot.discovery.jobspy import run_discovery
+        from findjobs.discovery.jobspy import run_discovery
         run_discovery()
         stats["jobspy"] = "ok"
     except Exception as e:
@@ -86,7 +86,7 @@ def _run_discover(workers: int = 1, smart_extract: bool = False) -> dict:
     # Workday corporate scraper
     console.print("  [cyan]Workday corporate scraper...[/cyan]")
     try:
-        from applypilot.discovery.workday import run_workday_discovery
+        from findjobs.discovery.workday import run_workday_discovery
         run_workday_discovery(workers=workers)
         stats["workday"] = "ok"
     except Exception as e:
@@ -97,7 +97,7 @@ def _run_discover(workers: int = 1, smart_extract: bool = False) -> dict:
     # Greenhouse corporate scraper
     console.print("  [cyan]Greenhouse corporate scraper...[/cyan]")
     try:
-        from applypilot.discovery.greenhouse import run_greenhouse_discovery
+        from findjobs.discovery.greenhouse import run_greenhouse_discovery
         run_greenhouse_discovery()
         stats["greenhouse"] = "ok"
     except Exception as e:
@@ -109,7 +109,7 @@ def _run_discover(workers: int = 1, smart_extract: bool = False) -> dict:
     if smart_extract:
         console.print("  [cyan]Smart extract (AI-powered scraping)...[/cyan]")
         try:
-            from applypilot.discovery.smartextract import run_smart_extract
+            from findjobs.discovery.smartextract import run_smart_extract
             run_smart_extract(workers=workers)
             stats["smartextract"] = "ok"
         except Exception as e:
@@ -126,7 +126,7 @@ def _run_discover(workers: int = 1, smart_extract: bool = False) -> dict:
 def _run_enrich(workers: int = 1) -> dict:
     """Stage: Detail enrichment — scrape full descriptions and apply URLs."""
     try:
-        from applypilot.enrichment.detail import run_enrichment
+        from findjobs.enrichment.detail import run_enrichment
         run_enrichment(workers=workers)
         return {"status": "ok"}
     except Exception as e:
@@ -137,7 +137,7 @@ def _run_enrich(workers: int = 1) -> dict:
 def _run_fastscore(rescore: bool = False) -> dict:
     """Stage: Keyword scoring — fast, no LLM, skill + location match."""
     try:
-        from applypilot.scoring.keyword_scorer import run_keyword_scoring
+        from findjobs.scoring.keyword_scorer import run_keyword_scoring
         run_keyword_scoring(rescore=rescore)
         return {"status": "ok"}
     except Exception as e:
@@ -148,7 +148,7 @@ def _run_fastscore(rescore: bool = False) -> dict:
 def _run_llmscore(rescore: bool = False) -> dict:
     """Stage: Claude batch re-scoring — adjusts keyword scores via claude CLI."""
     try:
-        from applypilot.scoring.llm_scorer import run_llm_scoring
+        from findjobs.scoring.llm_scorer import run_llm_scoring
         result = run_llm_scoring(rescore=rescore)
         return {"status": "ok", **result}
     except Exception as e:
@@ -159,7 +159,7 @@ def _run_llmscore(rescore: bool = False) -> dict:
 def _run_score() -> dict:
     """Stage: Gemini per-job scoring — opt-in only."""
     try:
-        from applypilot.scoring.scorer import run_scoring
+        from findjobs.scoring.scorer import run_scoring
         run_scoring()
         return {"status": "ok"}
     except Exception as e:
@@ -170,7 +170,7 @@ def _run_score() -> dict:
 def _run_tailor(min_score: int = 7, limit: int = 0, validation_mode: str = "normal") -> dict:
     """Stage: Resume tailoring — generate tailored resumes for high-fit jobs."""
     try:
-        from applypilot.scoring.tailor import run_tailoring
+        from findjobs.scoring.tailor import run_tailoring
         run_tailoring(min_score=min_score, limit=limit, validation_mode=validation_mode)
         return {"status": "ok"}
     except Exception as e:
@@ -181,7 +181,7 @@ def _run_tailor(min_score: int = 7, limit: int = 0, validation_mode: str = "norm
 def _run_cover(min_score: int = 7, limit: int = 0, validation_mode: str = "normal") -> dict:
     """Stage: Cover letter generation."""
     try:
-        from applypilot.scoring.cover_letter import run_cover_letters
+        from findjobs.scoring.cover_letter import run_cover_letters
         run_cover_letters(min_score=min_score, limit=limit, validation_mode=validation_mode)
         return {"status": "ok"}
     except Exception as e:
@@ -192,7 +192,7 @@ def _run_cover(min_score: int = 7, limit: int = 0, validation_mode: str = "norma
 def _run_pdf() -> dict:
     """Stage: PDF conversion — convert tailored resumes and cover letters to PDF."""
     try:
-        from applypilot.scoring.pdf import batch_convert
+        from findjobs.scoring.pdf import batch_convert
         batch_convert()
         return {"status": "ok"}
     except Exception as e:

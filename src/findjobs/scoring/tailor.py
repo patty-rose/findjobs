@@ -16,10 +16,10 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from applypilot.config import RESUME_PATH, TAILORED_DIR, load_profile
-from applypilot.database import get_connection, get_jobs_by_stage
-from applypilot.llm import get_client
-from applypilot.scoring.validator import (
+from findjobs.config import RESUME_PATH, TAILORED_DIR, load_profile
+from findjobs.database import get_connection, get_jobs_by_stage
+from findjobs.llm import get_client
+from findjobs.scoring.validator import (
     BANNED_WORDS,
     FABRICATION_WATCHLIST,
     sanitize_text,
@@ -520,7 +520,7 @@ def run_tailoring(min_score: int = 7, limit: int = 20,
             pdf_path = None
             if report["status"] in ("approved", "approved_with_judge_warning"):
                 try:
-                    from applypilot.scoring.pdf import convert_to_pdf
+                    from findjobs.scoring.pdf import convert_to_pdf
                     pdf_path = str(convert_to_pdf(txt_path))
                 except Exception:
                     log.debug("PDF generation failed for %s", txt_path, exc_info=True)

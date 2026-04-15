@@ -14,8 +14,8 @@ from datetime import datetime, timezone
 
 from jobspy import scrape_jobs
 
-from applypilot import config
-from applypilot.database import get_connection, init_db, store_jobs
+from findjobs import config
+from findjobs.database import get_connection, init_db, store_jobs
 
 log = logging.getLogger(__name__)
 
@@ -497,7 +497,7 @@ def run_discovery(cfg: dict | None = None) -> dict:
         cfg = config.load_search_config()
 
     if not cfg:
-        log.warning("No search configuration found. Run `applypilot init` to create one.")
+        log.warning("No search configuration found. Run `findjobs init` to create one.")
         return {"new": 0, "existing": 0, "errors": 0, "db_total": 0, "queries": 0}
 
     proxy = cfg.get("proxy")

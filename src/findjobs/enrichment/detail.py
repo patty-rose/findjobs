@@ -22,10 +22,10 @@ from urllib.parse import urljoin
 from bs4 import BeautifulSoup
 from playwright.sync_api import sync_playwright
 
-from applypilot import config
-from applypilot.config import DB_PATH
-from applypilot.database import get_connection, init_db, ensure_columns
-from applypilot.llm import get_client
+from findjobs import config
+from findjobs.config import DB_PATH
+from findjobs.database import get_connection, init_db, ensure_columns
+from findjobs.llm import get_client
 
 log = logging.getLogger(__name__)
 
@@ -42,7 +42,7 @@ def set_proxy(proxy_str: str | None):
     """Set proxy config from an external caller."""
     global _PROXY_CONFIG
     if proxy_str:
-        from applypilot.discovery.jobspy import parse_proxy
+        from findjobs.discovery.jobspy import parse_proxy
         _PROXY_CONFIG = parse_proxy(proxy_str)
 
 
@@ -50,7 +50,7 @@ def set_proxy(proxy_str: str | None):
 
 def _load_base_urls() -> dict[str, str | None]:
     """Load site base URLs from config/sites.yaml."""
-    from applypilot.config import load_base_urls
+    from findjobs.config import load_base_urls
     return load_base_urls()
 
 
@@ -469,7 +469,7 @@ def extract_with_llm(page, url: str) -> dict:
         elapsed = time.time() - t0
         log.info("LLM: %d chars in, %.1fs", len(prompt), elapsed)
 
-        from applypilot.discovery.smartextract import extract_json
+        from findjobs.discovery.smartextract import extract_json
         result = extract_json(raw)
         desc = result.get("full_description")
         apply_url = result.get("application_url")

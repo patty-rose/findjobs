@@ -21,7 +21,7 @@ from datetime import datetime, timezone
 
 from rich.console import Console
 
-from applypilot.database import get_connection
+from findjobs.database import get_connection
 
 log = logging.getLogger(__name__)
 console = Console()

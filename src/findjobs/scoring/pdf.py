@@ -7,7 +7,7 @@ and exports to PDF using headless Chromium via Playwright.
 import logging
 from pathlib import Path
 
-from applypilot.config import TAILORED_DIR
+from findjobs.config import TAILORED_DIR
 
 log = logging.getLogger(__name__)
 

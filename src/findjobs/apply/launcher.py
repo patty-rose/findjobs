@@ -23,15 +23,15 @@ from pathlib import Path
 from rich.console import Console
 from rich.live import Live
 
-from applypilot import config
-from applypilot.database import get_connection
-from applypilot.apply import chrome, dashboard, prompt as prompt_mod
-from applypilot.apply.chrome import (
+from findjobs import config
+from findjobs.database import get_connection
+from findjobs.apply import chrome, dashboard, prompt as prompt_mod
+from findjobs.apply.chrome import (
     launch_chrome, cleanup_worker, kill_all_chrome,
     reset_worker_dir, cleanup_on_exit, _kill_process_tree,
     BASE_CDP_PORT,
 )
-from applypilot.apply.dashboard import (
+from findjobs.apply.dashboard import (
     init_worker, update_state, add_event, get_state,
     render_full, get_totals,
 )
@@ -40,7 +40,7 @@ logger = logging.getLogger(__name__)
 
 # Blocked sites loaded from config/sites.yaml
 def _load_blocked():
-    from applypilot.config import load_blocked_sites, load_search_config
+    from findjobs.config import load_blocked_sites, load_search_config
     blocked_sites, blocked_patterns = load_blocked_sites()
     # Also exclude manual-apply sites (greenhouse, lever, etc.)
     search_cfg = load_search_config() or {}
@@ -151,7 +151,7 @@ def acquire_job(target_url: str | None = None, min_score: int = 7,
             return None
 
         # Skip manual ATS sites (unsolvable CAPTCHAs)
-        from applypilot.config import is_manual_ats
+        from findjobs.config import is_manual_ats
         apply_url = row["application_url"] or row["url"]
         if is_manual_ats(apply_url):
             conn.execute(

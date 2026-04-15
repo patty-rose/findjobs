@@ -13,7 +13,7 @@ import threading
 import time
 from pathlib import Path
 
-from applypilot import config
+from findjobs import config
 
 logger = logging.getLogger(__name__)
 

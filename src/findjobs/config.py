@@ -6,10 +6,10 @@ import shutil
 from pathlib import Path
 
 # User data directory — all user-specific files live here
-APP_DIR = Path(os.environ.get("APPLYPILOT_DIR", Path.home() / ".applypilot"))
+APP_DIR = Path(os.environ.get("FINDJOBS_DIR", Path.home() / ".findjobs"))
 
 # Core paths
-DB_PATH = APP_DIR / "applypilot.db"
+DB_PATH = APP_DIR / "findjobs.db"
 PROFILE_PATH = APP_DIR / "profile.json"
 RESUME_PATH = APP_DIR / "resume.txt"
 RESUME_PDF_PATH = APP_DIR / "resume.pdf"
@@ -93,17 +93,17 @@ def ensure_dirs():
 
 
 def load_profile() -> dict:
-    """Load user profile from ~/.applypilot/profile.json."""
+    """Load user profile from ~/.findjobs/profile.json."""
     import json
     if not PROFILE_PATH.exists():
         raise FileNotFoundError(
-            f"Profile not found at {PROFILE_PATH}. Run `applypilot init` first."
+            f"Profile not found at {PROFILE_PATH}. Run `findjobs init` first."
         )
     return json.loads(PROFILE_PATH.read_text(encoding="utf-8"))
 
 
 def load_search_config() -> dict:
-    """Load search configuration from ~/.applypilot/searches.yaml."""
+    """Load search configuration from ~/.findjobs/searches.yaml."""
     import yaml
     if not SEARCH_CONFIG_PATH.exists():
         # Fall back to package-shipped example
@@ -173,7 +173,7 @@ DEFAULTS = {
 
 
 def load_env():
-    """Load environment variables from ~/.applypilot/.env if it exists."""
+    """Load environment variables from ~/.findjobs/.env if it exists."""
     from dotenv import load_dotenv
     if ENV_PATH.exists():
         load_dotenv(ENV_PATH)
@@ -240,7 +240,7 @@ def check_tier(required: int, feature: str) -> None:
 
     missing: list[str] = []
     if required >= 2 and not any(os.environ.get(k) for k in ("GEMINI_API_KEY", "OPENAI_API_KEY", "LLM_URL")):
-        missing.append("LLM API key — run [bold]applypilot init[/bold] or set GEMINI_API_KEY")
+        missing.append("LLM API key — run [bold]findjobs init[/bold] or set GEMINI_API_KEY")
     if required >= 3:
         if not shutil.which("claude"):
             missing.append("Claude Code CLI — install from [bold]https://claude.ai/code[/bold]")

@@ -9,7 +9,7 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from applypilot import __version__
+from findjobs import __version__
 
 logging.basicConfig(
     level=logging.INFO,
@@ -18,7 +18,7 @@ logging.basicConfig(
 )
 
 app = typer.Typer(
-    name="applypilot",
+    name="findjobs",
     help="AI-powered end-to-end job application pipeline.",
     no_args_is_help=True,
 )
@@ -35,8 +35,8 @@ VALID_STAGES = ("discover", "enrich", "fastscore", "llmscore", "score", "tailor"
 
 def _bootstrap() -> None:
     """Common setup: load env, create dirs, init DB."""
-    from applypilot.config import load_env, ensure_dirs
-    from applypilot.database import init_db
+    from findjobs.config import load_env, ensure_dirs
+    from findjobs.database import init_db
 
     load_env()
     ensure_dirs()
@@ -45,7 +45,7 @@ def _bootstrap() -> None:
 
 def _version_callback(value: bool) -> None:
     if value:
-        console.print(f"[bold]applypilot[/bold] {__version__}")
+        console.print(f"[bold]findjobs[/bold] {__version__}")
         raise typer.Exit()
 
 
@@ -68,7 +68,7 @@ def main(
 @app.command()
 def init() -> None:
     """Run the first-time setup wizard (profile, resume, search config)."""
-    from applypilot.wizard.init import run_wizard
+    from findjobs.wizard.init import run_wizard
 
     run_wizard()
 
@@ -104,7 +104,7 @@ def run(
     """Run pipeline stages: discover, enrich, score, tailor, cover, pdf."""
     _bootstrap()
 
-    from applypilot.pipeline import run_pipeline
+    from findjobs.pipeline import run_pipeline
 
     stage_list = stages if stages else ["all"]
 
@@ -120,7 +120,7 @@ def run(
     # Gate AI stages behind Tier 2
     llm_stages = {"score", "tailor", "cover"}
     if any(s in stage_list for s in llm_stages) or "all" in stage_list:
-        from applypilot.config import check_tier
+        from findjobs.config import check_tier
         check_tier(2, "AI scoring/tailoring")
 
     # Validate the --validation flag value
@@ -167,25 +167,25 @@ def apply(
     """Launch auto-apply to submit job applications."""
     _bootstrap()
 
-    from applypilot.config import check_tier, PROFILE_PATH as _profile_path
-    from applypilot.database import get_connection
+    from findjobs.config import check_tier, PROFILE_PATH as _profile_path
+    from findjobs.database import get_connection
 
     # --- Utility modes (no Chrome/Claude needed) ---
 
     if mark_applied:
-        from applypilot.apply.launcher import mark_job
+        from findjobs.apply.launcher import mark_job
         mark_job(mark_applied, "applied")
         console.print(f"[green]Marked as applied:[/green] {mark_applied}")
         return
 
     if mark_failed:
-        from applypilot.apply.launcher import mark_job
+        from findjobs.apply.launcher import mark_job
         mark_job(mark_failed, "failed", reason=fail_reason)
         console.print(f"[yellow]Marked as failed:[/yellow] {mark_failed} ({fail_reason or 'manual'})")
         return
 
     if reset_failed:
-        from applypilot.apply.launcher import reset_failed as do_reset
+        from findjobs.apply.launcher import reset_failed as do_reset
         count = do_reset()
         console.print(f"[green]Reset {count} failed job(s) for retry.[/green]")
         return
@@ -199,7 +199,7 @@ def apply(
     if not _profile_path.exists():
         console.print(
             "[red]Profile not found.[/red]\n"
-            "Run [bold]applypilot init[/bold] to create your profile first."
+            "Run [bold]findjobs init[/bold] to create your profile first."
         )
         raise typer.Exit(code=1)
 
@@ -213,12 +213,12 @@ def apply(
         if ready == 0:
             console.print(
                 "[red]No scored jobs ready to apply to.[/red]\n"
-                "Run [bold]applypilot run fastscore[/bold] first."
+                "Run [bold]findjobs run fastscore[/bold] first."
             )
             raise typer.Exit(code=1)
 
     if gen:
-        from applypilot.apply.launcher import gen_prompt, BASE_CDP_PORT
+        from findjobs.apply.launcher import gen_prompt, BASE_CDP_PORT
         target = url or ""
         if not target:
             console.print("[red]--gen requires --url to specify which job.[/red]")
@@ -237,7 +237,7 @@ def apply(
         )
         return
 
-    from applypilot.apply.launcher import main as apply_main
+    from findjobs.apply.launcher import main as apply_main
 
     effective_limit = limit if limit is not None else (0 if continuous else 1)
 
@@ -268,7 +268,7 @@ def status() -> None:
     """Show pipeline statistics from the database."""
     _bootstrap()
 
-    from applypilot.database import get_stats
+    from findjobs.database import get_stats
 
     stats = get_stats()
 
@@ -334,7 +334,7 @@ def dashboard() -> None:
     """Generate and open the HTML dashboard in your browser."""
     _bootstrap()
 
-    from applypilot.view import open_dashboard
+    from findjobs.view import open_dashboard
 
     open_dashboard()
 
@@ -343,7 +343,7 @@ def dashboard() -> None:
 def doctor() -> None:
     """Check your setup and diagnose missing requirements."""
     import shutil
-    from applypilot.config import (
+    from findjobs.config import (
         load_env, PROFILE_PATH, RESUME_PATH, RESUME_PDF_PATH,
         SEARCH_CONFIG_PATH, ENV_PATH, get_chrome_path,
     )
@@ -361,7 +361,7 @@ def doctor() -> None:
     if PROFILE_PATH.exists():
         results.append(("profile.json", ok_mark, str(PROFILE_PATH)))
     else:
-        results.append(("profile.json", fail_mark, "Run 'applypilot init' to create"))
+        results.append(("profile.json", fail_mark, "Run 'findjobs init' to create"))
 
     # Resume
     if RESUME_PATH.exists():
@@ -369,13 +369,13 @@ def doctor() -> None:
     elif RESUME_PDF_PATH.exists():
         results.append(("resume.txt", warn_mark, "Only PDF found — plain-text needed for AI stages"))
     else:
-        results.append(("resume.txt", fail_mark, "Run 'applypilot init' to add your resume"))
+        results.append(("resume.txt", fail_mark, "Run 'findjobs init' to add your resume"))
 
     # Search config
     if SEARCH_CONFIG_PATH.exists():
         results.append(("searches.yaml", ok_mark, str(SEARCH_CONFIG_PATH)))
     else:
-        results.append(("searches.yaml", warn_mark, "Will use example config — run 'applypilot init'"))
+        results.append(("searches.yaml", warn_mark, "Will use example config — run 'findjobs init'"))
 
     # jobspy (discovery dep installed separately)
     try:
@@ -400,7 +400,7 @@ def doctor() -> None:
         results.append(("LLM API key", ok_mark, f"Local: {os.environ.get('LLM_URL')}"))
     else:
         results.append(("LLM API key", fail_mark,
-                        "Set GEMINI_API_KEY in ~/.applypilot/.env (run 'applypilot init')"))
+                        "Set GEMINI_API_KEY in ~/.findjobs/.env (run 'findjobs init')"))
 
     # --- Tier 3 checks ---
     # Claude Code CLI
@@ -447,7 +447,7 @@ def doctor() -> None:
     console.print()
 
     # Tier summary
-    from applypilot.config import get_tier, TIER_LABELS
+    from findjobs.config import get_tier, TIER_LABELS
     tier = get_tier()
     console.print(f"[bold]Current tier: Tier {tier} — {TIER_LABELS[tier]}[/bold]")
 
@@ -465,7 +465,7 @@ def portland(
     min_score: int = typer.Option(1, "--min-score", help="Minimum fit score to include."),
 ) -> None:
     """Show all jobs in Portland / Oregon area, ordered by score."""
-    from applypilot.database import get_connection, init_db
+    from findjobs.database import get_connection, init_db
 
     _bootstrap()
     init_db()
@@ -506,8 +506,8 @@ def browse(
     """
     import webbrowser
     from datetime import datetime, timezone
-    from applypilot.config import load_search_config
-    from applypilot.database import get_connection, init_db
+    from findjobs.config import load_search_config
+    from findjobs.database import get_connection, init_db
 
     _bootstrap()
     init_db()
@@ -569,7 +569,7 @@ def review(
     Jobs are not marked as applied — they stay visible for future runs.
     """
     import webbrowser
-    from applypilot.database import get_connection, init_db
+    from findjobs.database import get_connection, init_db
 
     _bootstrap()
     init_db()

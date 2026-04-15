@@ -25,8 +25,8 @@ import re
 import time
 from datetime import datetime, timezone
 
-from applypilot.config import load_profile, load_search_config
-from applypilot.database import get_connection, get_jobs_by_stage
+from findjobs.config import load_profile, load_search_config
+from findjobs.database import get_connection, get_jobs_by_stage
 
 log = logging.getLogger(__name__)
 
@@ -378,7 +378,7 @@ def run_keyword_scoring(rescore: bool = False) -> dict:
     """Score jobs using tiered keyword matching. Fast, no API calls."""
     profile = load_profile()
     if not profile:
-        log.error("No profile found. Run 'applypilot init' first.")
+        log.error("No profile found. Run 'findjobs init' first.")
         return {"scored": 0, "skipped": 0, "errors": 0, "elapsed": 0.0}
 
     search_cfg = load_search_config() or {}

@@ -1,6 +1,6 @@
 # ApplyPilot search configuration
-# Copy to ~/.applypilot/searches.yaml and customize for your job search.
-# The wizard (applypilot init) generates a basic version automatically.
+# Copy to ~/.findjobs/searches.yaml and customize for your job search.
+# The wizard (findjobs init) generates a basic version automatically.
 
 # Search queries -- each has a query string and priority tier.
 # Tier 1: High-priority exact matches (searched first, highest precision)

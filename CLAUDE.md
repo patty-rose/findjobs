@@ -7,11 +7,11 @@ This is a personal fork of ApplyPilot, repurposed as a **job discovery and scori
 ## Intended Workflow
 
 ```
-applypilot run discover enrich fastscore llmscore
-applypilot review          # open top-scoring jobs in browser
-applypilot review --score 8
-applypilot portland        # filter for Portland/Oregon area jobs
-applypilot browse          # open Greenhouse/Lever jobs (manual-apply sites)
+findjobs run discover enrich fastscore llmscore
+findjobs review          # open top-scoring jobs in browser
+findjobs review --score 8
+findjobs portland        # filter for Portland/Oregon area jobs
+findjobs browse          # open Greenhouse/Lever jobs (manual-apply sites)
 ```
 
 ## What We Use
