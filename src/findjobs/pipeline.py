@@ -32,12 +32,9 @@ console = Console()
 # Stage definitions
 # ---------------------------------------------------------------------------
 
-STAGE_ORDER = ("discover", "enrich", "fastscore", "llmscore", "score", "tailor", "cover", "pdf")
+STAGE_ORDER = ("discover", "enrich", "fastscore", "llmscore")
 
-# Default stages when running with no args or "all".
-# llmscore = Claude batch re-scoring via `claude -p` (uses existing CLI session, no API key needed).
-# score = legacy Gemini per-job scoring, opt-in only.
-DEFAULT_STAGES = ("discover", "enrich", "fastscore", "llmscore", "tailor", "cover", "pdf")
+DEFAULT_STAGES = ("discover", "enrich", "fastscore", "llmscore")
 
 STAGE_META: dict[str, dict] = {
     "discover":  {"desc": "Job discovery (JobSpy + Workday + Greenhouse + smart extract)"},
