@@ -2,7 +2,7 @@
 
 > **⚠️ ApplyPilot** is the original open-source project, created by [Pickle-Pixel](https://github.com/Pickle-Pixel) and first published on GitHub on **February 17, 2026**. We are **not affiliated** with applypilot.app, useapplypilot.com, or any other product using the "ApplyPilot" name. These sites are **not associated with this project** and may misrepresent what they offer. If you're looking for the original autonomous job application agent, see the upstream repo.
 
-# ApplyPilot
+# FindJobs
 
 **A finely tuned job discovery and scoring pipeline. Find the right jobs — then apply yourself.**
 
@@ -22,7 +22,7 @@ https://github.com/user-attachments/assets/7ee3417f-43d4-4245-9952-35df1e77f2df
 
 ## What It Does
 
-ApplyPilot scrapes jobs from across the web, scores them against your profile with two passes (fast keyword scoring + Claude AI re-scoring), and puts the best matches in front of you. You review and apply on your own terms.
+FindJobs scrapes jobs from across the web, scores them against your profile with two passes (fast keyword scoring + Claude AI re-scoring), and puts the best matches in front of you. You review and apply on your own terms.
 
 ```bash
 pip install findjobs
@@ -79,7 +79,7 @@ Job search queries, target titles, locations. Configure which Workday employers 
 ### `.env`
 API keys: `GEMINI_API_KEY`, `LLM_MODEL`.
 
-### Package configs (shipped with ApplyPilot)
+### Package configs (shipped with FindJobs)
 - `config/employers.yaml` - Workday employer registry
 - `config/sites.yaml` - Greenhouse boards and manual-apply sites
 - `config/searches.example.yaml` - Example search configuration
