@@ -319,7 +319,7 @@ def _run_one_search(
         msg += f", {title_filtered} filtered (title)"
     log.info(msg)
 
-    return {"new": new, "existing": existing, "errors": 0, "filtered": filtered, "total": before, "label": label}
+    return {"new": new, "existing": existing, "errors": 0, "filtered": loc_filtered + title_filtered, "total": before, "label": label}
 
 
 # -- Single query search -----------------------------------------------------
