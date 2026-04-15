@@ -556,5 +556,85 @@ def browse(
     console.print("[dim]These will not appear in future browse or auto-apply runs.[/dim]\n")
 
 
+@app.command()
+def review(
+    score: int = typer.Option(None, "--score", "-s", help="Open jobs with exactly this score."),
+    min_score: int = typer.Option(None, "--min-score", help="Open jobs with at least this score."),
+    limit: int = typer.Option(50, "--limit", "-l", help="Max jobs to open."),
+) -> None:
+    """Open job URLs in your browser by score tier for manual review.
+
+    Without arguments, shows the score distribution and opens the top score tier.
+    Use --score 9 to open all 9s, --min-score 7 to open everything >= 7.
+    Jobs are not marked as applied — they stay visible for future runs.
+    """
+    import webbrowser
+    from applypilot.database import get_connection, init_db
+
+    _bootstrap()
+    init_db()
+
+    conn = get_connection()
+
+    # Show score distribution first
+    dist = conn.execute(
+        "SELECT fit_score, COUNT(*) as n FROM jobs "
+        "WHERE fit_score IS NOT NULL AND (applied_at IS NULL OR apply_status NOT IN ('applied')) "
+        "GROUP BY fit_score ORDER BY fit_score DESC"
+    ).fetchall()
+
+    if not dist:
+        console.print("[yellow]No scored jobs found.[/yellow]")
+        raise typer.Exit()
+
+    console.print("\n[bold]Score distribution:[/bold]")
+    for row in dist:
+        bar = "█" * min(row["n"], 40)
+        score_color = "green" if row["fit_score"] >= 7 else "yellow" if row["fit_score"] >= 4 else "dim"
+        console.print(f"  [{score_color}]{row['fit_score']:2d}[/{score_color}]: {bar} ({row['n']})")
+    console.print()
+
+    # Determine which score(s) to open
+    if score is not None:
+        where = "fit_score = ?"
+        params = (score, limit)
+        label = f"score = {score}"
+    elif min_score is not None:
+        where = "fit_score >= ?"
+        params = (min_score, limit)
+        label = f"score >= {min_score}"
+    else:
+        top_score = dist[0]["fit_score"]
+        where = "fit_score = ?"
+        params = (top_score, limit)
+        label = f"score = {top_score} (top tier)"
+
+    rows = conn.execute(f"""
+        SELECT url, title, site, fit_score, score_reasoning
+        FROM jobs
+        WHERE {where}
+          AND url IS NOT NULL
+          AND (applied_at IS NULL OR apply_status NOT IN ('applied'))
+        ORDER BY fit_score DESC, title
+        LIMIT ?
+    """, params).fetchall()
+
+    if not rows:
+        console.print(f"[yellow]No jobs found for {label}.[/yellow]")
+        raise typer.Exit()
+
+    console.print(f"[bold]Opening {len(rows)} jobs ({label}):[/bold]\n")
+    for row in rows:
+        score_color = "green" if row["fit_score"] >= 7 else "yellow" if row["fit_score"] >= 4 else "dim"
+        site = row["site"] or ""
+        console.print(f"  [[{score_color}]{row['fit_score']}[/{score_color}]] {row['title']}" + (f" @ {site}" if site else ""))
+        if row["score_reasoning"]:
+            console.print(f"        [dim]{row['score_reasoning']}[/dim]")
+        console.print(f"        [dim]{row['url'][:80]}[/dim]")
+        webbrowser.open(row["url"])
+
+    console.print(f"\n[green]Opened {len(rows)} jobs.[/green] [dim](not marked — will appear in future runs)[/dim]\n")
+
+
 if __name__ == "__main__":
     app()
