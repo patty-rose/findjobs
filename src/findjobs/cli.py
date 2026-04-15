@@ -461,30 +461,42 @@ def doctor() -> None:
 
 
 @app.command()
-def portland(
+def local(
     min_score: int = typer.Option(1, "--min-score", help="Minimum fit score to include."),
 ) -> None:
-    """Show all jobs in Portland / Oregon area, ordered by score."""
+    """Show on-site/local jobs based on your location_accept config, ordered by score."""
+    from findjobs.config import load_search_config
     from findjobs.database import get_connection, init_db
 
     _bootstrap()
     init_db()
 
+    search_cfg = load_search_config() or {}
+    location_accept = search_cfg.get("location_accept", [])
+    local_terms = [t for t in location_accept if t.lower() not in ("remote", "anywhere", "us")]
+
+    if not local_terms:
+        console.print("[yellow]No local locations configured in searches.yaml (location_accept).[/yellow]")
+        raise typer.Exit()
+
+    where_clauses = " OR ".join(f"location LIKE '%{term}%'" for term in local_terms)
+
     conn = get_connection()
-    rows = conn.execute("""
+    rows = conn.execute(f"""
         SELECT title, location, fit_score, score_reasoning, url
         FROM jobs
-        WHERE (location LIKE '%portland%' OR location LIKE '%oregon%' OR location LIKE '%hillsboro%')
+        WHERE ({where_clauses})
           AND (applied_at IS NULL OR apply_status = 'manual')
           AND fit_score >= ?
         ORDER BY fit_score DESC
     """, (min_score,)).fetchall()
 
+    label = " / ".join(t.title() for t in local_terms)
     if not rows:
-        console.print("[yellow]No Portland/Oregon jobs found.[/yellow]")
+        console.print(f"[yellow]No local jobs found for: {label}[/yellow]")
         raise typer.Exit()
 
-    console.print(f"\n[bold]Portland / Oregon jobs ({len(rows)} found):[/bold]\n")
+    console.print(f"\n[bold]Local jobs — {label} ({len(rows)} found):[/bold]\n")
     for r in rows:
         score_color = "green" if r["fit_score"] >= 7 else "yellow" if r["fit_score"] >= 4 else "dim"
         console.print(f"  [[{score_color}]{r['fit_score']}[/{score_color}]] {r['title']}")
@@ -492,6 +504,23 @@ def portland(
         console.print(f"        [dim]{r['score_reasoning']}[/dim]")
         console.print(f"        [dim]{r['url'][:80]}[/dim]")
         console.print()
+
+
+@app.command()
+def search(
+    workers: int = typer.Option(1, "--workers", "-w", help="Parallel threads for discovery/enrichment."),
+) -> None:
+    """Discover jobs and score them (discover + enrich + fastscore + llmscore).
+
+    One command for the full scrape-and-score cycle.
+    """
+    from findjobs.pipeline import run_pipeline
+
+    _bootstrap()
+    run_pipeline(
+        stages=["discover", "enrich", "fastscore", "llmscore"],
+        workers=workers,
+    )
 
 
 @app.command()
