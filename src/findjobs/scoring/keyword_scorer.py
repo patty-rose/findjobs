@@ -23,6 +23,7 @@ import logging
 import math
 import re
 import time
+from functools import lru_cache
 from datetime import datetime, timezone
 
 from findjobs.config import load_profile, load_search_config
@@ -304,9 +305,17 @@ def _score_job(desc: str, location: str | None, title: str,
 
     text = desc.lower()
 
+    @lru_cache(maxsize=None)
+    def _kw_pattern(kw: str) -> re.Pattern:
+        """Word-boundary pattern for a keyword. Handles multi-word and special chars."""
+        return re.compile(r'(?<!\w)' + re.escape(kw) + r'(?!\w)', re.IGNORECASE)
+
+    def _count_kw(kw: str) -> int:
+        return len(_kw_pattern(kw).findall(text))
+
     def _freq_weight(kw: str) -> float:
         """Sublinear frequency boost: 1 mention=1.0x, 2=1.2x, 3+=1.35x."""
-        count = text.count(kw)
+        count = _count_kw(kw)
         if count == 0:
             return 0.0
         if count == 1:
@@ -315,9 +324,9 @@ def _score_job(desc: str, location: str | None, title: str,
             return 1.2
         return 1.35
 
-    t1_hits = [kw for kw in tier1 if kw in text]
-    t2_hits = [kw for kw in tier2 if kw in text]
-    t3_hits = [kw for kw in tier3 if kw in text]
+    t1_hits = [kw for kw in tier1 if _count_kw(kw) > 0]
+    t2_hits = [kw for kw in tier2 if _count_kw(kw) > 0]
+    t3_hits = [kw for kw in tier3 if _count_kw(kw) > 0]
 
     t1_pts = sum(_freq_weight(kw) * 2.0 for kw in t1_hits)
     t2_pts = sum(_freq_weight(kw) * 0.75 for kw in t2_hits)
