@@ -552,7 +552,7 @@ def browse(
     """, (min_score, limit)).fetchall()
 
     if not rows:
-        console.print("[yellow]No manual-apply jobs found scoring >= {min_score}.[/yellow]")
+        console.print(f"[yellow]No manual-apply jobs found scoring >= {min_score}.[/yellow]")
         raise typer.Exit()
 
     console.print(f"\n[bold]Opening {len(rows)} jobs in browser (score >= {min_score}):[/bold]\n")
