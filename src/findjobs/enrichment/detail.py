@@ -586,13 +586,12 @@ def scrape_detail_page(page, url: str) -> dict:
         result["elapsed"] = time.time() - t0
         return result
 
-    tier2_apply = apply
-
-    # Tier 3 (LLM) disabled — skip pages we can't parse with HTML extraction
-    result["application_url"] = tier2_apply
+    # No description found via JSON-LD or CSS selectors
+    result["application_url"] = apply
     result["tier_used"] = 2
-    result["status"] = "partial" if tier2_apply else "no_description"
+    result["status"] = "no_description"
     result["elapsed"] = time.time() - t0
+    log.debug("No description extracted for %s", result.get("url", "?"))
     return result
 
 
