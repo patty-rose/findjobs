@@ -21,6 +21,7 @@ from datetime import datetime, timezone
 
 from rich.console import Console
 
+from findjobs.config import load_profile, load_search_config
 from findjobs.database import get_connection
 
 log = logging.getLogger(__name__)
@@ -29,25 +30,50 @@ console = Console()
 _MODEL = "haiku"
 _MAX_JOBS_PER_BATCH = 100  # keep prompt comfortably under context limits
 
-_SYSTEM = """You are a job fit evaluator for a software engineer job search.
+
+def _build_system_prompt() -> str:
+    """Build the Claude scoring prompt from profile.json and searches.yaml."""
+    try:
+        profile = load_profile()
+    except FileNotFoundError:
+        profile = {}
+    search_cfg = load_search_config() or {}
+
+    exp = profile.get("experience", {})
+    yoe = exp.get("years_of_experience_total", "?")
+    current_title = exp.get("current_title", "software engineer")
+    target_role = exp.get("target_role", "Software Engineer")
+
+    tiers = search_cfg.get("skill_tiers", {})
+    tier1 = tiers.get("tier1", [])
+    tier2 = tiers.get("tier2", [])
+    stack = ", ".join(tier1[:8] + tier2[:4]) if (tier1 or tier2) else "Python, TypeScript, React"
+
+    loc_accept = search_cfg.get("location_accept", [])
+    local_locs = [t for t in loc_accept if t.lower() not in ("remote", "anywhere", "us")]
+    loc_desc = f"remote-US or {' / '.join(t.title() for t in local_locs)} on-site" if local_locs else "remote-US"
+
+    reject_always = search_cfg.get("location_reject_always", [])
+    reject_loc_str = f" Not interested in international locations: {', '.join(reject_always[:5])}." if reject_always else ""
+
+    return f"""You are a job fit evaluator for a software engineer job search.
 
 CANDIDATE:
-- ~3 years Python/Django/TypeScript/React experience
+- ~{yoe} years experience, current title: {current_title}, target: {target_role}
 - Wants: fullstack-leaning-backend or pure backend roles
 - NOT interested in: frontend-only, DevOps/SRE, QA/SDET, mobile, senior/staff/lead/principal roles
-- Stack: Python, Django, TypeScript, React, PostgreSQL, REST APIs, Docker, AWS
-- Location: Portland OR — wants remote-US or Portland/Oregon on-site
+- Stack: {stack}
+- Location: {loc_desc}{reject_loc_str}
 - Not interested in: PHP, Java, .NET, C#, Golang, Scala, hardware/embedded, ML/AI engineering
 
-Each job line is: id={id} | {title} @ {company} | {location} | keyword_score={N} | desc: {first 300 chars}
+Each job line is: id={{id}} | {{title}} @ {{company}} | {{location}} | keyword_score={{N}} | desc: {{first 300 chars}}
 
 Adjust the keyword_score up or down based on what you can infer:
 
 Green flags (raise score by 1-3):
 - "mid-level", "midlevel", "2-4 years", "2-3 years", "3-5 years" in description
 - Title is clean and generic: "Software Engineer", "Full Stack Engineer", "Backend Engineer"
-- Python or Django mentioned prominently as PRIMARY stack
-- TypeScript + React mentioned alongside backend work
+- Primary stack matches candidate's tier1 skills
 - Role is clearly backend or fullstack with backend emphasis
 
 Red flags (lower score by 1-3):
@@ -59,7 +85,7 @@ Red flags (lower score by 1-3):
 - Role is at a non-US location that snuck through
 
 Return ONLY a JSON array, no other text:
-[{"id": <int>, "score": <1-10>, "reason": "<one short phrase>"}]
+[{{"id": <int>, "score": <1-10>, "reason": "<one short phrase>"}}]
 """
 
 
@@ -76,9 +102,10 @@ def _build_summary(job: dict) -> str:
 
 def _call_claude(jobs: list[dict]) -> list[dict]:
     """Send a batch of job summaries to claude CLI and return parsed adjustments."""
+    system_prompt = _build_system_prompt()
     summaries = "\n".join(_build_summary(j) for j in jobs)
     prompt = (
-        f"{_SYSTEM}\n\n"
+        f"{system_prompt}\n\n"
         f"Review these {len(jobs)} jobs and return the JSON array:\n\n"
         f"{summaries}"
     )
